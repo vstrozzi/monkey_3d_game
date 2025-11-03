@@ -1,26 +1,34 @@
 use bevy::{input::mouse::MouseMotion, prelude::*};
 
+
+pub struct Camera3dFpovPlugin;
+
+impl Plugin for Camera3dFpovPlugin{
+    fn build(&self, app: &mut App){
+        app
+        .add_systems(
+            Update,
+            (
+                camera_3d_fpov_keyboard,
+                camera_3d_fpov_mouse,
+            ),
+        );
+    }
+}
 /// 3D Camera System
 /// A simple first-person "look" camera system.
-pub fn first_person_camera_look(
+pub fn camera_3d_fpov_keyboard(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    // game_state: Res<GameState>, // Uncomment if you use this
     // Query for the camera's transform
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
 ) {
-    // if !game_state.is_playing {
-    //     return;
-    // }
-
     let Ok(mut transform) = camera_query.single_mut() else {
         // No camera, or more than one camera
         return;
     };
 
     let speed: f32 = 5.0 * time.delta_secs();
-
-    // --- XZ Plane Movement (Minecraft Style) ---
 
     // Get the camera's local axes
     let strafe_vector = transform.local_x();
@@ -62,7 +70,7 @@ pub fn first_person_camera_look(
     }
 }
 
-pub fn mouse_look(
+pub fn camera_3d_fpov_mouse(
     mut mouse_motion_events: MessageReader<MouseMotion>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
     time: Res<Time>,

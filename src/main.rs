@@ -1,6 +1,7 @@
 use bevy::{prelude::*};
 
-use monkey_3D_game::plugins::my_plugin::{MyPlugin};
+use monkey_3d_game::plugins::my_plugin::{MyPlugin};
+use monkey_3d_game::camera::Camera3dFpovPlugin;
 /// Main application function
 fn main() {
     App::new()
@@ -13,9 +14,6 @@ fn main() {
             ..default()
         }))
         .add_plugins(MyPlugin)
+        .add_plugins(Camera3dFpovPlugin)
         .run();
 }
-
-
-
-
