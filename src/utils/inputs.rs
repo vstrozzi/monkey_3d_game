@@ -22,17 +22,18 @@ pub fn toggle_display_cursor_mode_ring(window: &mut Window, cursor: &mut CursorO
     DISPLAY_RING_IDX.store(next, Ordering::SeqCst);
 
     let (mode, grab, visible) = match next {
-        0 => (WindowMode::Windowed, CursorGrabMode::None, true),
-        1 => (WindowMode::Fullscreen(MonitorSelection::Current, VideoModeSelection::Current), CursorGrabMode::Locked, false),
+        1
+         => (WindowMode::Windowed, CursorGrabMode::None, true),
+        0 => (WindowMode::Fullscreen(MonitorSelection::Current, VideoModeSelection::Current), CursorGrabMode::Locked, false),
         _ => unreachable!(),
     };
 
     #[cfg(not(target_arch = "wasm32"))]
     {
     window.mode = mode;
-    cursor.grab_mode = grab;
     }
 
+    cursor.grab_mode = grab;
     cursor.visible = visible;
 }
 

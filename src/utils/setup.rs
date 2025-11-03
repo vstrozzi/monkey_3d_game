@@ -14,7 +14,7 @@ pub fn setup(
     commands.spawn((
         Camera3d::default(),
         // Start at (0, 2.5, 8.0) looking at the origin
-        Transform::from_xyz(0.0, 2.5, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(0.0, 0.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
     // Light
@@ -110,7 +110,7 @@ pub fn setup(
 
     // Add small cube marker on target face
     let face_center = (top + base_corners[target_face] + base_corners[1]) / 3.0;
-    let marker_offset = (face_center - Vec3::ZERO).normalize() * 0.1;
+    let marker_offset = (face_center - Vec3::new(0.0, -10.0, 0.0)).normalize() * 0.1;
 
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
