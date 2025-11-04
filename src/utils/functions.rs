@@ -4,7 +4,6 @@ use crate::utils::objects::{FaceMarker, GameState, Pyramid};
 
 use crate::log;
 
-
 /// Plugin for handling functions
 pub struct FunctionsPlugin;
 
@@ -20,7 +19,6 @@ impl Plugin for FunctionsPlugin {
             );
     }
 }
-
 
 /// Function for defining the winning situation
 pub fn check_face_alignment(

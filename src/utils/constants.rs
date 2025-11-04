@@ -1,5 +1,9 @@
 /// Camera 3D
 pub mod camera_3d_constants {
+    pub const CAMERA_3D_INITIAL_X: f32 = 0.0;
+    pub const CAMERA_3D_INITIAL_Y: f32 = 0.0;
+    pub const CAMERA_3D_INITIAL_Z: f32 = 8.0;
+
     pub const CAMERA_3D_SPEED_X: f32 = 2.0;
     pub const CAMERA_3D_SPEED_Z: f32 = 4.0;
 

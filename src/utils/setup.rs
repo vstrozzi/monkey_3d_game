@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::log;
 use crate::utils::objects::{FaceMarker, GameState, Pyramid, RotationSpeed};
-
+use crate::utils::constants::camera_3d_constants::{CAMERA_3D_INITIAL_X, CAMERA_3D_INITIAL_Y, CAMERA_3D_INITIAL_Z};
 
 /// Plugin for handling setup
 pub struct SetupPlugin;
@@ -23,8 +23,8 @@ pub fn setup(
     // Camera
     commands.spawn((
         Camera3d::default(),
-        // Start at (0, 2.5, 8.0) looking at the origin
-        Transform::from_xyz(0.0, 0.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
+        // Start at fixed position looking at the origin
+        Transform::from_xyz(CAMERA_3D_INITIAL_X, CAMERA_3D_INITIAL_Y, CAMERA_3D_INITIAL_Z).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
     // Light
@@ -34,7 +34,7 @@ pub fn setup(
             shadows_enabled: true,
             ..default()
         },
-        Transform::from_xyz(4.0, 8.0, 4.0),
+        Transform::from_xyz(2.0, 2.0, -2.0),
     ));
 
     // Ambient light
@@ -51,9 +51,9 @@ pub fn setup(
     // Define vertices for pyramid
     let top = Vec3::new(0.0, pyramid_height, 0.0);
     let base_corners = [
-        Vec3::new(-base_size / 3.0, 0.0, -base_size / 3.0),
-        Vec3::new(base_size / 3.0, 0.0, -base_size / 3.0),
-        Vec3::new(base_size / 3.0, 0.0, base_size / 3.0),
+        Vec3::new(-base_size / 3.0, -1.0, -base_size / 3.0),
+        Vec3::new(base_size / 3.0, -1.0, -base_size / 3.0),
+        Vec3::new(base_size / 3.0,-1.0, base_size / 3.0),
     ];
 
     // Face colors - one will be the target (red with marker)

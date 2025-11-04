@@ -21,5 +21,5 @@ pub struct Pyramid;
 pub struct FaceMarker {
     pub face_index: usize,
     pub color: Color,
-    pub normal: Vec3, // <-- ADDED: Store the face's normal
+    pub normal: Vec3,
 }
