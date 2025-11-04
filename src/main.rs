@@ -3,10 +3,13 @@ use bevy::{
     window::*,
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}};
 
-use monkey_3d_game::{plugins::my_plugin::MyPlugin, utils::constants::game_constants::REFRESH_RATE_HZ};
-use monkey_3d_game::utils::camera::Camera3dFpovPlugin;
-use monkey_3d_game::utils::inputs::InputsPlugin;
-
+use monkey_3d_game::utils::{
+    camera::Camera3dFpovPlugin,
+    constants::game_constants::REFRESH_RATE_HZ,
+    functions::FunctionsPlugin,
+    inputs::InputsPlugin,
+    setup::SetupPlugin,
+};
 
 /// Main application function
 fn main() {
@@ -43,10 +46,11 @@ fn main() {
         FrameTimeDiagnosticsPlugin::default(),
         ))
         // My Plugin
-        .add_plugins(MyPlugin)
+        .add_plugins(SetupPlugin)
+        .add_plugins(FunctionsPlugin)
         .add_plugins(Camera3dFpovPlugin)
         .add_plugins(InputsPlugin)
-        // My resources (fixed timestep timer)
+        // Timer for physics (fixed timestep timer)
         .insert_resource(Time::<Fixed>::from_hz(REFRESH_RATE_HZ))
         .run();
 }

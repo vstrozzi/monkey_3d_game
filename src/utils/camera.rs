@@ -14,12 +14,12 @@ impl Plugin for Camera3dFpovPlugin {
 /// Rotates around the origin with A/D and zooms in/out with W/S
 pub fn camera_3d_fpov_inputs(
     keyboard: Res<ButtonInput<KeyCode>>,
-    timer: Res<Time<Fixed>>,
+    timer: Res<Time>,
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
 ) {
     let Ok(mut transform) = camera_query.single_mut() else {
         return;
-    };
+    };  
 
     // Orbit parameters
     let speed = camera_3d_constants::CAMERA_3D_SPEED_X * timer.delta_secs();

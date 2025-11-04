@@ -4,6 +4,24 @@ use crate::utils::objects::{FaceMarker, GameState, Pyramid};
 
 use crate::log;
 
+
+/// Plugin for handling functions
+pub struct FunctionsPlugin;
+
+impl Plugin for FunctionsPlugin {
+    fn build(&self, app: &mut App) {
+        app
+        .add_systems(
+            Update,
+            (
+                crate::utils::functions::check_face_alignment,
+                crate::utils::functions::game_ui,
+            ),
+            );
+    }
+}
+
+
 /// Function for defining the winning situation
 pub fn check_face_alignment(
     keyboard: Res<ButtonInput<KeyCode>>,

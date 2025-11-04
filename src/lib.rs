@@ -8,7 +8,3 @@ pub mod utils {
     pub mod constants;
     pub mod inputs;
 }
-
-pub mod plugins {
-    pub mod my_plugin;
-}

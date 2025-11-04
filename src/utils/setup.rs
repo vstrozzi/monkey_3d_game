@@ -3,6 +3,16 @@ use bevy::prelude::*;
 use crate::log;
 use crate::utils::objects::{FaceMarker, GameState, Pyramid, RotationSpeed};
 
+
+/// Plugin for handling setup
+pub struct SetupPlugin;
+
+impl Plugin for SetupPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, crate::utils::setup::setup);
+    }
+}
+
 /// Systems
 pub fn setup(
     mut commands: Commands,
