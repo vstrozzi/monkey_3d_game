@@ -3,6 +3,9 @@ pub mod camera_3d_constants {
     pub const CAMERA_3D_SPEED: f32 = 5.0;
     pub const CAMERA_3D_SENSITIVITY_X: f32 = 0.003;
     pub const CAMERA_3D_SENSITIVITY_Y: f32 = 0.002;
+    
+    pub const MIN_RADIUS: f32 = 5.0;
+    pub const MAX_RADIUS: f32 = 20.0;
 }
 
 
