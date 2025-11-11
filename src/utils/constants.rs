@@ -45,7 +45,6 @@ pub mod pyramid_constants {
     pub const DECORATION_COUNT_MAX: usize = 100;
     pub const DECORATION_SIZE_MIN: f32 = 0.05;
     pub const DECORATION_SIZE_MAX: f32 = 0.15;
-    pub const DECORATION_OFFSET_RANGE: f32 = 0.3; // How far from center decorations can be placed
 
 }
 
