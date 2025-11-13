@@ -128,7 +128,7 @@ App::new()
 ### Two Pyramid Types
 
 - **Type1**: All 3 faces have different colors
-- **Type2**: 2 faces share the same color (harder!)
+- **Type2**: 2 faces share the same color
 
 ### Face Decoration System
 
@@ -146,73 +146,6 @@ PYRAMID_COLORS = [
     BLUE,
     GREEN
 ]
-```
-
-## 🔧 Key Bevy 0.17.2 APIs Used
-
-### Entity Spawning (New in 0.14+)
-
-```rust
-// New way (0.14+)
-commands.spawn((
-    Mesh3d(mesh),
-    MeshMaterial3d(material),
-    Transform::default(),
-));
-```
-
-### Component Access
-
-```rust
-// Queries
-fn system(query: Query<&Transform, With<Camera3d>>) { }
-fn system(mut query: Query<&mut Transform>) { }
-
-// Resources
-fn system(res: Res<GameState>) { }
-fn system(mut res: ResMut<GameState>) { }
-```
-
-### UI (New Text API in 0.15+)
-
-```rust
-// Spawn text
-commands.spawn((
-    Text::new("Hello"),
-    TextFont {
-        font_size: 24.0,
-        ..default()
-    },
-    TextColor(Color::WHITE),
-    Node { /* positioning */ },
-));
-```
-
-### Transform Operations
-
-```rust
-// Position
-Transform::from_xyz(x, y, z)
-
-// Look at
-transform.looking_at(Vec3::ZERO, Vec3::Y)
-
-// Rotation (orbital camera)
-let (yaw, pitch, roll) = transform.rotation.to_euler(EulerRot::YXZ);
-transform.translation = Vec3::new(
-    radius * yaw.sin(),
-    height,
-    radius * yaw.cos(),
-);
-```
-
-### Input Handling
-
-```rust
-fn system(keyboard: Res<ButtonInput<KeyCode>>) {
-    if keyboard.just_pressed(KeyCode::Space) { /* ... */ }
-    if keyboard.pressed(KeyCode::KeyW) { /* ... */ }
-}
 ```
 
 ## 🎲 Game State Machine
@@ -317,88 +250,9 @@ python3 -m http.server 8000
 # Open http://localhost:8000
 ```
 
-## 🔨 How to Modify
-
-### Change Pyramid Colors
-
-Edit `src/utils/constants.rs`:
-
-```rust
-pub const PYRAMID_COLORS: [Color; 3] = [
-    Color::srgb(1.0, 0.0, 0.0),  // Face 0 (target)
-    Color::srgb(0.0, 1.0, 0.0),  // Face 1
-    Color::srgb(0.0, 0.0, 1.0),  // Face 2
-];
-```
-
-### Add New Decoration Shape
-
-1. Add variant to `DecorationShape` enum in `objects.rs`
-2. Implement mesh creation in `setup.rs` (see `create_star_mesh`)
-3. Add case in `create_decoration_mesh` function
-
-### Change Camera Behavior
-
-Edit `src/utils/camera.rs`:
-- Modify `CAMERA_3D_SPEED_X/Z` for different speeds
-- Change `CAMERA_3D_MIN/MAX_RADIUS` for zoom limits
-- Add pitch control by modifying rotation calculation
-
-### Add New Game Mode
-
-1. Add field to `GameState` in `objects.rs`
-2. Modify state machine in `game_ui` function in `game_functions.rs`
-3. Add new key handler in `inputs.rs`
-
-## 🐛 Common Issues
-
-### Camera not moving
-- Check `game_state.is_playing` and `game_state.is_started` flags
-- Camera only responds when game is active
-
-### Face alignment not detecting
-- Verify `COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD` value
-- Check face normals are calculated correctly in world space
-
-### WASM not loading
-- Ensure `wasm32-unknown-unknown` target is installed
-- Check browser console for errors
-- Verify `index.html` points to correct WASM file
-
-## 📚 Key Bevy Concepts Used
-
-- **ECS (Entity Component System)**: Core architecture pattern
-- **Plugins**: Modular game logic organization
-- **Queries**: Efficient entity filtering and access
-- **Resources**: Global game state management
-- **Systems**: Functions that run each frame
-- **Commands**: Deferred entity/component operations
-- **Fixed Timestep**: For consistent physics (60Hz)
-- **Markers**: Zero-size components for entity tagging
-
 ## 🔗 Useful Links
 
 - [Bevy 0.17 Documentation](https://docs.rs/bevy/0.17.2/bevy/)
 - [Bevy Official Examples](https://bevyengine.org/examples/)
 - [Bevy Cheat Book](https://bevy-cheatbook.github.io/)
 - [Bevy Assets](https://bevyengine.org/assets/)
-
-## 💡 Quick Tips
-
-1. **Use markers**: Tag entities with zero-size components for easy queries
-2. **State changes**: Set `is_changed` flag when game state updates
-3. **Restart logic**: Despawn all `GameEntity` components, call `setup` again
-4. **Camera math**: Use polar coordinates for smooth orbital motion
-5. **Performance**: Most setup uses `ResMut` to reduce cloning
-
-## 🎯 Next Steps for Development
-
-- [ ] Add scoring system based on attempts and time
-- [ ] Multiple difficulty levels (pyramid complexity)
-- [ ] Sound effects and music
-- [ ] Particle effects on correct alignment
-- [ ] Multiplayer race mode
-- [ ] Leaderboard (local/online)
-- [ ] More pyramid shapes (4-sided, 5-sided)
-- [ ] Tutorial mode with hints
-- [ ] Save/load game progress
