@@ -1,6 +1,6 @@
 # Monkey 3D Game
 
-A 3D puzzle game built with Bevy where the player must find the **RED face** of a randomly generated 3-sided pyramid using an orbital camera system.
+A 3D puzzle game built with Bevy where the player must find the correct orientation of the given randomly generated 3-sided pyramid using an orbital camera system.
 
 **Objective**: Locate the red face of the pyramid by orbiting around it, then press SPACE when aligned correctly.
 
