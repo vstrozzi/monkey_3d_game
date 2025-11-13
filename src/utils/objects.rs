@@ -20,7 +20,7 @@ impl Default for PyramidType {
 }
 
 /// An enum representing the possible shapes for decorations on the pyramid faces.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DecorationShape {
     Circle,
     Square,
@@ -28,19 +28,47 @@ pub enum DecorationShape {
     Triangle,
 }
 
+/// A single decoration on a pyramid face.
+/// Stored using barycentric coordinates relative to the triangle vertices (top, corner1, corner2).
+#[derive(Clone, Debug)]
+pub struct Decoration {
+    /// Barycentric coordinates (w0, w1, w2) where:
+    /// - w0 = weight for top vertex
+    /// - w1 = weight for corner1 vertex
+    /// - w2 = weight for corner2 vertex
+    /// Position can be reconstructed as: position = w0*top + w1*corner1 + w2*corner2
+    pub barycentric: Vec3,
+    /// Size of the decoration
+    pub size: f32,
+}
+
+/// A set of decorations for a pyramid face.
+/// All decorations on a face share the same shape and color.
+#[derive(Clone, Debug)]
+pub struct DecorationSet {
+    /// The shape used for all decorations on this face
+    pub shape: DecorationShape,
+    /// The color used for all decorations on this face
+    pub color: Color,
+    /// The list of individual decorations with their positions and sizes
+    pub decorations: Vec<Decoration>,
+}
+
 /// Game state enum representing the different states the game can be in
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum GamePhase {
     #[default]
+    // The game has not started yet
     NotStarted,
+    // The game is currently being played
     Playing,
+    // The game has been won
     Won,
 }
 
 /// A resource that holds the current state of the game.
 #[derive(Resource, Clone, Default, Debug)]
 pub struct GameState {
-    // Game state - using state machine pattern
     /// The current phase of the game
     pub phase: GamePhase,
     // Game values
@@ -111,6 +139,8 @@ pub struct FaceMarker {
     pub face_index: usize,
     pub color: Color,
     pub normal: Vec3,
+    /// The decorations on this face (if any)
+    pub decorations: Option<DecorationSet>,
 }
 
 /// A component that marks an entity as a game entity, which can be cleared during setup.

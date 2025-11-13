@@ -1,9 +1,8 @@
 // This file contains the logic for spawning the pyramid and its decorations.
-use crate::utils::constants::{
-    object_constants::GROUND_Y, pyramid_constants::*,
-};
+use crate::utils::constants::{object_constants::GROUND_Y, pyramid_constants::*};
 use crate::utils::objects::{
-    DecorationShape, FaceMarker, GameEntity, GameState, Pyramid, PyramidType, RandomGen,
+    Decoration, DecorationSet, DecorationShape, FaceMarker, GameEntity, GameState, Pyramid,
+    PyramidType, RandomGen,
 };
 use bevy::prelude::*;
 
@@ -38,6 +37,37 @@ pub fn spawn_pyramid(
         prev_xz = Vec2::new(x, z);
         // Save the new vertex.
         base_corners[i] = Vec3::new(prev_xz.x, GROUND_Y, prev_xz.y);
+    }
+
+    // Generate decoration sets for each face.
+    // For Type2 pyramids, we replicate one decoration set (similar to colors).
+    let mut decoration_sets: [Option<DecorationSet>; 3] = [None, None, None];
+
+    // Generate decoration sets for faces
+    decoration_sets[0] = Some(generate_decoration_set(
+        &mut random_gen.random_gen,
+        top,
+        base_corners[0],
+        base_corners[1],
+    ));
+
+    decoration_sets[1] = Some(generate_decoration_set(
+        &mut random_gen.random_gen,
+        top,
+        base_corners[1],
+        base_corners[2],
+    ));
+
+    // For Type2 pyramids, replicate one decoration set to another face
+    if game_state.pyramid_type == PyramidType::Type2 {
+        decoration_sets[2] = decoration_sets[1].clone();
+    } else {
+        decoration_sets[2] = Some(generate_decoration_set(
+            &mut random_gen.random_gen,
+            top,
+            base_corners[2],
+            base_corners[0],
+        ));
     }
 
     // Create the triangular face meshes independently.
@@ -93,43 +123,44 @@ pub fn spawn_pyramid(
                     } else {
                         -normal
                     },
+                    decorations: decoration_sets[i].clone(),
                 },
                 GameEntity,
             ))
             .id();
 
-        // Spawn decorations on this face.
-        spawn_face_decorations(
-            commands,
-            meshes,
-            materials,
-            &mut random_gen.random_gen,
-            face_entity,
-            top,
-            base_corners[i],
-            base_corners[next],
-            normal,
-        );
+        // Spawn decorations from the decoration set.
+        if let Some(ref decoration_set) = decoration_sets[i] {
+            spawn_decorations_from_set(
+                commands,
+                meshes,
+                materials,
+                face_entity,
+                decoration_set,
+                top,
+                base_corners[i],
+                base_corners[next],
+                normal,
+            );
+        }
     }
 }
 
-/// Spawns decorative shapes on a pyramid face using a Poisson-like sampling method.
-fn spawn_face_decorations(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
+/// Generates a decoration set for a pyramid face using Poisson-like sampling.
+/// Decorations are stored using barycentric coordinates relative to the triangle vertices.
+fn generate_decoration_set(
     rng: &mut ChaCha8Rng,
-    parent_face: Entity,
     top: Vec3,
     corner1: Vec3,
     corner2: Vec3,
-    face_normal: Vec3,
-) {
-    // Determine the number of decorations to spawn.
+) -> DecorationSet {
+    // Determine the number of decorations to generate.
     let decoration_count = rng.random_range(DECORATION_COUNT_MIN..=DECORATION_COUNT_MAX);
 
-    // Store the generated decoration positions and sizes for overlap checking.
-    let mut decorations: Vec<(Vec3, f32)> = Vec::new();
+    // Store the generated decoration positions (in world space) for overlap checking.
+    let mut decorations_world: Vec<(Vec3, f32)> = Vec::new();
+    // Store the final decorations with barycentric coordinates.
+    let mut decorations: Vec<Decoration> = Vec::new();
 
     // Set the maximum number of attempts to place each decoration before giving up.
     const MAX_PLACEMENT_ATTEMPTS: usize = 30;
@@ -162,29 +193,76 @@ fn spawn_face_decorations(
         let size = rng.random_range(DECORATION_SIZE_MIN..DECORATION_SIZE_MAX);
 
         // Generate a random position using barycentric coordinates to ensure the point is inside the triangle.
-        let (position, is_valid) =
-            sample_point_in_triangle(rng, top, corner1, corner2, size, &decorations);
+        let (world_position, is_valid) =
+            sample_point_in_triangle(rng, top, corner1, corner2, size, &decorations_world);
 
         // Skip this attempt if the position overlaps with existing decorations or is too close to the edges.
         if !is_valid {
             continue;
         }
 
-        // Create a mesh based on the chosen shape.
-        let mesh = create_decoration_mesh(shape, size);
+        // Convert world position to barycentric coordinates
+        // We need to solve: world_position = w0*top + w1*corner1 + w2*corner2
+        // where w0 + w1 + w2 = 1
+        let v0 = corner1 - top;
+        let v1 = corner2 - top;
+        let v2 = world_position - top;
+
+        let d00 = v0.dot(v0);
+        let d01 = v0.dot(v1);
+        let d11 = v1.dot(v1);
+        let d20 = v2.dot(v0);
+        let d21 = v2.dot(v1);
+
+        let denom = d00 * d11 - d01 * d01;
+        let w1 = (d11 * d20 - d01 * d21) / denom;
+        let w2 = (d00 * d21 - d01 * d20) / denom;
+        let w0 = 1.0 - w1 - w2;
+
+        // Store this decoration with barycentric coordinates
+        decorations.push(Decoration {
+            barycentric: Vec3::new(w0, w1, w2),
+            size,
+        });
+        decorations_world.push((world_position, size));
+        successful_placements += 1;
+    }
+
+    DecorationSet {
+        shape,
+        color,
+        decorations,
+    }
+}
+
+/// Spawns decorations from a decoration set onto a face.
+/// Reconstructs world positions from barycentric coordinates relative to the given triangle vertices.
+fn spawn_decorations_from_set(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    parent_face: Entity,
+    decoration_set: &DecorationSet,
+    top: Vec3,
+    corner1: Vec3,
+    corner2: Vec3,
+    face_normal: Vec3,
+) {
+    for decoration in &decoration_set.decorations {
+        // Reconstruct world position from barycentric coordinates
+        let position = decoration.barycentric.x * top
+            + decoration.barycentric.y * corner1
+            + decoration.barycentric.z * corner2;
+
+        // Create a mesh based on the shape.
+        let mesh = create_decoration_mesh(decoration_set.shape, decoration.size);
 
         // Calculate the rotation to align the decoration with the face plane.
-        // First, rotate from Z-up (the default for the mesh) to Y-up, then align Y-up to the face normal.
-        let base_rotation = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2); // Rotate 90 degrees to make the mesh face up in the Y direction.
-        let face_rotation = Quat::from_rotation_arc(Vec3::Y, face_normal);
-        let final_rotation = face_rotation * base_rotation;
+        let base_rotation = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+        let normal_rotation = Quat::from_rotation_arc(Vec3::Y, face_normal);
+        let final_rotation = normal_rotation * base_rotation;
 
-        // Add a small random rotation around the normal for variety.
-        let random_spin =
-            Quat::from_axis_angle(face_normal, rng.random_range(0.0..std::f32::consts::TAU));
-        let rotation = random_spin * final_rotation;
-
-        // Offset the position slightly along the normal to prevent z-fighting with the face.
+        // Offset slightly away from face surface to prevent z-fighting
         let offset_position = position - face_normal * 0.001;
 
         // Spawn the decoration as a child of the face.
@@ -192,22 +270,18 @@ fn spawn_face_decorations(
             parent.spawn((
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: color,
-                    emissive: color.to_linear() * 0.3, // Add a slight glow.
+                    base_color: decoration_set.color,
+                    cull_mode: None,
                     ..default()
                 })),
                 Transform {
                     translation: offset_position,
-                    rotation,
+                    rotation: final_rotation,
                     scale: Vec3::ONE,
                 },
                 GameEntity,
             ));
         });
-
-        // Store this decoration's position and size for future collision checks.
-        decorations.push((position, size));
-        successful_placements += 1;
     }
 }
 
