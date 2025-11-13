@@ -32,10 +32,6 @@ pub enum DecorationShape {
 /// Stored using barycentric coordinates relative to the triangle vertices (top, corner1, corner2).
 #[derive(Clone, Debug)]
 pub struct Decoration {
-    /// Barycentric coordinates (w0, w1, w2) where:
-    /// - w0 = weight for top vertex
-    /// - w1 = weight for corner1 vertex
-    /// - w2 = weight for corner2 vertex
     /// Position can be reconstructed as: position = w0*top + w1*corner1 + w2*corner2
     pub barycentric: Vec3,
     /// Size of the decoration

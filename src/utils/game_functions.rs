@@ -24,8 +24,8 @@ impl Plugin for GameFunctionsPlugin {
     }
 }
 
-/// Spawns a black screen that covers the entire viewport.
-pub fn spawn_black_screen(commands: &mut Commands) {
+/// Spawns a semi-transparent dark overlay that covers the entire viewport.
+pub fn spawn_overlay(commands: &mut Commands) {
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -35,42 +35,77 @@ pub fn spawn_black_screen(commands: &mut Commands) {
             align_items: AlignItems::Center,
             ..default()
         },
-        BackgroundColor(Color::BLACK),
-        UIEntity, // Marker for despawning
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 1.)),
+        UIEntity,
     ));
 }
 
-/// Spawns centered text on a black screen.
-pub fn spawn_centered_text_black_screen(commands: &mut Commands, text: &str) {
+/// Spawns a styled card with centered text.
+pub fn spawn_text_card(commands: &mut Commands, title: &str, content: &str, accent_color: Color) {
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                justify_content: JustifyContent::Center, // horizontally center children
-                align_items: AlignItems::Center,         // vertically center children
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
-            UIEntity,                                    // Marker for despawning
-            BackgroundColor(Color::srgb(0.0, 0.0, 0.0)), // transparent container
+            UIEntity,
         ))
         .with_children(|parent| {
-            // Spawn the text child
-            parent.spawn((
-                Text::new(text),
-                TextFont {
-                    font_size: 32.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(1.0, 1.0, 1.0)),
-                Node {
-                    max_width: Val::Px(1200.0), // limit text width for wrapping
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-            ));
+            // Card container
+            parent
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(40.0)),
+                        row_gap: Val::Px(20.0),
+                        border: UiRect::all(Val::Px(3.0)),
+                        max_width: Val::Px(700.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.1, 0.1, 0.15, 0.95)),
+                    BorderColor::all(accent_color),
+                ))
+                .with_children(|card| {
+                    // Title
+                    card.spawn((
+                        Text::new(title),
+                        TextFont {
+                            font_size: 48.0,
+                            ..default()
+                        },
+                        TextColor(accent_color),
+                        TextLayout::new_with_justify(Justify::Center),
+                    ));
+
+                    // Divider
+                    card.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(2.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.2)),
+                    ));
+
+                    // Content
+                    card.spawn((
+                        Text::new(content),
+                        TextFont {
+                            font_size: 20.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.9, 0.9, 0.95)),
+                        TextLayout::new_with_justify(Justify::Center),
+                        Node {
+                            max_width: Val::Px(600.0),
+                            ..default()
+                        },
+                    ));
+                });
         });
 }
 
@@ -168,34 +203,76 @@ pub fn game_ui(
                 game_state.attempts = 0;
                 game_state.is_changed = true;
             } else {
-                // Display start screen
-                let text = "Press SPACE to start the game! \nGame Commands: Arrow Keys/WASD: Rotate | SPACE: Check";
-                spawn_centered_text_black_screen(&mut commands, text);
+                // Display start screen with overlay
+                spawn_overlay(&mut commands);
+
+                let title = "PYRAMID SEEKER";
+                let content = "Find the correct orientation of the pyramid!\n\n\
+                              Controls:\n\
+                              Arrow Keys / WASD - Rotate camera\n\
+                              SPACE - Check alignment\n\n\
+                              Press SPACE to start";
+
+                spawn_text_card(
+                    &mut commands,
+                    title,
+                    content,
+                    Color::srgb(1.0, 0.3, 0.3), // Red accent
+                );
                 game_state.is_changed = true;
             }
         }
 
         GamePhase::Playing => {
-            // Display game UI
-            let text = format!(
-                "Arrow Keys/WASD: Rotate | SPACE: Check \nFind the RED face! | Attempts: {}",
-                game_state.attempts
-            );
-            commands.spawn((
-                Text::new(text),
-                TextFont {
-                    font_size: 24.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(10.0),
-                    left: Val::Px(10.0),
-                    ..default()
-                },
-                UIEntity,
-            ));
+            // Display minimalist game HUD
+            commands
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: Val::Px(20.0),
+                        left: Val::Px(20.0),
+                        padding: UiRect::all(Val::Px(20.0)),
+                        border: UiRect::all(Val::Px(2.0)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(10.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+                    BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.3)),
+                    UIEntity,
+                ))
+                .with_children(|parent| {
+                    // Target indicator
+                    parent.spawn((
+                        Text::new("Orientate yourself"),
+                        TextFont {
+                            font_size: 18.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(1.0, 0.3, 0.3)),
+                    ));
+
+                    // Attempts counter
+                    parent.spawn((
+                        Text::new(format!("Attempts: {}", game_state.attempts)),
+                        TextFont {
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.8, 0.8, 0.9)),
+                    ));
+
+                    // Controls hint
+                    parent.spawn((
+                        Text::new("WASD/Arrows | SPACE: Check"),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.6)),
+                    ));
+                });
+
             game_state.is_changed = true;
         }
 
@@ -205,28 +282,37 @@ pub fn game_ui(
                 for entity in entities.iter() {
                     commands.entity(entity).despawn();
                 }
-                spawn_black_screen(&mut commands);
+                spawn_overlay(&mut commands);
                 setup(commands, meshes, materials, random_gen, time);
             } else {
-                // Display win screen
+                // Display win screen with overlay
+                spawn_overlay(&mut commands);
+
                 let elapsed = game_state.end_time.unwrap().as_secs_f32()
                     - game_state.start_time.unwrap().as_secs_f32();
-                let accuracy = game_state.cosine_alignment.unwrap() * 100.0;
+                let accuracy = game_state.cosine_alignment.unwrap().abs() * 100.0;
 
-                let mut text = format!(
-                    "Refresh (R) to play again\n\n\
-                    CONGRATULATIONS! YOU WIN!\n\
-                    - Time taken: {:.5} seconds\n\
-                    - Attempts: {}\n\
-                    - Alignment accuracy: {:.1}%",
+                let title = if game_state.attempts == 1 {
+                    "PERFECT! FIRST TRY!"
+                } else {
+                    "VICTORY!"
+                };
+
+                let content = format!(
+                    "You found the RED face!\n\n\
+                     Time: {:.2}s\n\
+                     Attempts: {}\n\
+                     Accuracy: {:.1}%\n\n\
+                     Press R to play again",
                     elapsed, game_state.attempts, accuracy
                 );
 
-                if game_state.attempts == 1 {
-                    text.push_str("\nPERFECT! First try!");
-                }
-
-                spawn_centered_text_black_screen(&mut commands, &text);
+                spawn_text_card(
+                    &mut commands,
+                    title,
+                    &content,
+                    Color::srgb(0.3, 1.0, 0.5), // Green accent for victory
+                );
                 game_state.is_changed = true;
             }
         }
