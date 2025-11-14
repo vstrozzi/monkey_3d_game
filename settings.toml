@@ -1,0 +1,38 @@
+[pyramid]
+base_radius_min = 1.0
+base_radius_max = 5.0
+height_min = 2.0
+height_max = 7.0
+
+[decorations]
+count_min = 10
+count_max = 100
+size_min = 0.05000000074505806
+size_max = 0.15000000596046448
+
+[camera]
+speed_rotation = 2.0
+speed_zoom = 4.0
+min_radius = 5.0
+max_radius = 50.0
+
+[game]
+alignment_threshold = -0.8999999761581421
+pyramid_colors = [
+    [
+    1.0,
+    0.03310476243495941,
+    0.03310476243495941,
+],
+    [
+    0.03310476243495941,
+    0.21404114365577698,
+    1.0,
+],
+    [
+    0.03310476243495941,
+    1.0,
+    0.07323896884918213,
+],
+]
+random_seed = 69

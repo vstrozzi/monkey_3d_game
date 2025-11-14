@@ -85,7 +85,7 @@ pub fn setup(
         &mut game_state,
     );
 
-    log!("🎮 Pyramid Game Started!");
+    log!("Pyramid Game Started!");
 }
 
 /// Initializes the `GameState` resource with random values.
@@ -133,7 +133,7 @@ pub fn setup_game_state(
         pyramid_start_orientation_radius: pyramid_start_orientation_radius,
         pyramid_color_faces: pyramid_colors,
 
-        phase: GamePhase::NotStarted,
+        phase: GamePhase::Menu,
         is_changed: true,
 
         start_time: Some(time.elapsed()),

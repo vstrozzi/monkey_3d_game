@@ -7,6 +7,9 @@ use bevy::window::{
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::utils::objects::{GameEntity, GamePhase, GameState, RandomGen};
+use crate::utils::setup::setup;
+
 /// A plugin for handling keyboard inputs.
 pub struct InputsPlugin;
 
@@ -48,17 +51,42 @@ pub fn toggle_display_cursor_mode_ring(window: &mut Window, cursor: &mut CursorO
     cursor.visible = visible;
 }
 
-/// Handles keyboard inputs, specifically the Escape key.
+/// Handles keyboard inputs, specifically the Escape and R keys.
 pub fn handle_keyboard_input(
     keyboard: Res<ButtonInput<KeyCode>>,
+    mut game_state: ResMut<GameState>,
+    mut commands: Commands,
+    entities: Query<Entity, With<GameEntity>>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<StandardMaterial>>,
+    random_gen: ResMut<RandomGen>,
+    time: Res<Time>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
     mut cursor: Query<&mut CursorOptions>,
 ) {
-    // If the Escape key is pressed, toggle the display and cursor mode.
+    // Handle ESC key to toggle window mode
     if keyboard.just_pressed(KeyCode::Escape) {
         let mut window = windows.single_mut().unwrap();
         let mut cursor = cursor.single_mut().unwrap();
         println!("our window mode is {:?}", window.mode);
         toggle_display_cursor_mode_ring(&mut window, &mut cursor);
+    }
+
+    // Handle R key to restart/reload the game
+    if keyboard.just_pressed(KeyCode::KeyR) {
+        match game_state.phase {
+            GamePhase::Won | GamePhase::Playing => {
+                // Restart the game by despawning all game entities and calling setup
+                for entity in entities.iter() {
+                    commands.entity(entity).despawn();
+                }
+                setup(commands, meshes, materials, random_gen, time);
+                game_state.phase = GamePhase::Playing;
+                game_state.is_changed = true;
+            }
+            _ => {
+                // Don't restart from menu or other screens
+            }
+        }
     }
 }

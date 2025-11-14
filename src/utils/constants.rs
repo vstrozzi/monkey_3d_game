@@ -71,7 +71,7 @@ pub mod pyramid_constants {
 /// Generic game constants.
 pub mod game_constants {
     // The refresh rate of the game in hertz.
-    pub const REFRESH_RATE_HZ: f64 = 60.0; // Hz
+    pub const REFRESH_RATE_HZ: f64 = 60.0;
 
     // The seed for the random number generator.
     pub const SEED: u64 = 69;
@@ -80,5 +80,5 @@ pub mod game_constants {
     pub const FONT_PATH: &str = "fonts/Roboto/Roboto-VariableFont_wdth,wght.ttf";
 
     // The cosine of the angle between the camera and the face normal, used to determine if the camera is looking at the correct face.
-    pub const COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD: f32 = -0.9; // Allowed misalignment camera and correct face normal
+    pub const COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD: f32 = -0.9;
 }

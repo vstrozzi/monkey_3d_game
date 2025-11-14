@@ -13,6 +13,8 @@ pub mod utils {
     pub mod game_functions;
     // The `inputs` module handles player input.
     pub mod inputs;
+    // The `keyboard_navigation` module contains keyboard navigation functionality for menus.
+    pub mod keyboard_navigation;
     // The `macros` module defines macros used in the game.
     pub mod macros;
     // The `objects` module defines the various objects, resources, and components used in the game.
@@ -21,4 +23,8 @@ pub mod utils {
     pub mod pyramid;
     // The `setup` module contains the setup logic for the game.
     pub mod setup;
+    // The `settings_io` module handles loading and saving settings from/to TOML files.
+    pub mod settings_io;
+    // The `ui_components` module contains reusable UI components like buttons and sliders.
+    pub mod ui_components;
 }

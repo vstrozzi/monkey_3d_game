@@ -14,11 +14,20 @@ use monkey_3d_game::utils::{
     game_functions::GameFunctionsPlugin,
     inputs::InputsPlugin,
     objects::{GameState, RandomGen},
+    settings_io,
     setup::SetupPlugin,
 };
 
 /// The main function, which serves as the entry point for the application.
 fn main() {
+    // Load game settings from file, or use defaults if not found.
+    let game_settings = settings_io::load_settings();
+
+    // Create default settings file if it doesn't exist.
+    if let Err(e) = settings_io::create_default_settings_file() {
+        eprintln!("Warning: Failed to create default settings file: {}", e);
+    }
+
     // Configure the window for the game.
     let window = Some(Window {
         title: "Monkey 3D Game".into(),
@@ -64,7 +73,9 @@ fn main() {
         .insert_resource(Time::<Fixed>::from_hz(REFRESH_RATE_HZ))
         // Add a resource for generating random numbers.
         .insert_resource(RandomGen::default())
-        // Add a resource for the game state.
+        // Add a resource for the game settings (loaded from file or defaults).
+        .insert_resource(game_settings)
+        // Add a resource for the game state (starts in Menu).
         .insert_resource(GameState::default())
         .run();
 }

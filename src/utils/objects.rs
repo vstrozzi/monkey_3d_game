@@ -54,12 +54,67 @@ pub struct DecorationSet {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum GamePhase {
     #[default]
-    // The game has not started yet
-    NotStarted,
-    // The game is currently being played
+    Menu,
+    Instructions,
+    Settings,
     Playing,
-    // The game has been won
     Won,
+}
+
+/// A resource that holds game settings that can be configured by the player.
+#[derive(Resource, Clone, Debug)]
+pub struct GameSettings {
+    // Pyramid settings
+    pub pyramid_base_radius_min: f32,
+    pub pyramid_base_radius_max: f32,
+    pub pyramid_height_min: f32,
+    pub pyramid_height_max: f32,
+
+    // Decoration settings
+    pub decoration_count_min: usize,
+    pub decoration_count_max: usize,
+    pub decoration_size_min: f32,
+    pub decoration_size_max: f32,
+
+    // Camera settings
+    pub camera_speed_rotation: f32,
+    pub camera_speed_zoom: f32,
+    pub camera_min_radius: f32,
+    pub camera_max_radius: f32,
+
+    // Game settings
+    pub alignment_threshold: f32,
+    pub pyramid_colors: [Color; 3],
+    pub random_seed: u64,
+}
+
+impl Default for GameSettings {
+    fn default() -> Self {
+        use crate::utils::constants::{
+            camera_3d_constants::*, game_constants::*, pyramid_constants::*,
+        };
+
+        Self {
+            pyramid_base_radius_min: PYRAMID_BASE_RADIUS_MIN,
+            pyramid_base_radius_max: PYRAMID_BASE_RADIUS_MAX,
+            pyramid_height_min: PYRAMID_HEIGHT_MIN,
+            pyramid_height_max: PYRAMID_HEIGHT_MAX,
+
+            decoration_count_min: DECORATION_COUNT_MIN,
+            decoration_count_max: DECORATION_COUNT_MAX,
+            decoration_size_min: DECORATION_SIZE_MIN,
+            decoration_size_max: DECORATION_SIZE_MAX,
+
+            camera_speed_rotation: CAMERA_3D_SPEED_X,
+            camera_speed_zoom: CAMERA_3D_SPEED_Z,
+            camera_min_radius: CAMERA_3D_MIN_RADIUS,
+            camera_max_radius: CAMERA_3D_MAX_RADIUS,
+
+            alignment_threshold: COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD,
+            pyramid_colors: PYRAMID_COLORS,
+            random_seed: SEED,
+        }
+    }
 }
 
 /// A resource that holds the current state of the game.
