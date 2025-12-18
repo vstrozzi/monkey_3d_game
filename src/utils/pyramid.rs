@@ -1,4 +1,4 @@
-//! Logic for spawning the pyramid and its decorations.
+//! Logic for spawning the pyramid base with interactive doors.
 
 use crate::utils::constants::{object_constants::GROUND_Y, pyramid_constants::*};
 use crate::utils::objects::{
@@ -10,6 +10,353 @@ use bevy::prelude::*;
 use rand::{Rng, RngCore};
 use rand_chacha::ChaCha8Rng;
 
+/// Component to mark the base frame (wooden panel with hole)
+#[derive(Component)]
+pub struct BaseFrame {
+    pub side_index: usize,
+}
+
+/// Component to mark the base door (pentagon that covers the hole)
+#[derive(Component)]
+pub struct BaseDoor {
+    pub side_index: usize,
+    pub face_index: usize, // Which pyramid face this aligns with (0, 1, or 2)
+    pub is_open: bool,
+}
+
+/// Spawns the wooden base with holes for the pyramid
+pub fn spawn_pyramid_base(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    game_state: &GameState,
+) {
+    let base_radius = game_state.pyramid_base_radius;
+    let angle_increment = std::f32::consts::TAU / BASE_NR_SIDES as f32;
+    
+    // Calculate which base sides align with pyramid corners
+    let sides_per_corner = BASE_NR_SIDES / 3;
+    
+    for i in 0..BASE_NR_SIDES {
+        let angle1 = i as f32 * angle_increment + game_state.pyramid_start_orientation_rad;
+        let angle2 = (i + 1) as f32 * angle_increment + game_state.pyramid_start_orientation_rad;
+        
+        // Calculate the four corners of the rectangular side
+        let bottom_outer_1 = Vec3::new(
+            base_radius * angle1.cos(),
+            GROUND_Y,
+            base_radius * angle1.sin(),
+        );
+        let bottom_outer_2 = Vec3::new(
+            base_radius * angle2.cos(),
+            GROUND_Y,
+            base_radius * angle2.sin(),
+        );
+        let top_outer_1 = Vec3::new(
+            base_radius * angle1.cos(),
+            GROUND_Y + BASE_HEIGHT,
+            base_radius * angle1.sin(),
+        );
+        let top_outer_2 = Vec3::new(
+            base_radius * angle2.cos(),
+            GROUND_Y + BASE_HEIGHT,
+            base_radius * angle2.sin(),
+        );
+        
+        // Create the frame mesh with a pentagonal hole
+        let frame_mesh = create_frame_with_hole(
+            bottom_outer_1,
+            bottom_outer_2,
+            top_outer_1,
+            top_outer_2,
+        );
+        
+        // Calculate the normal for the side
+        let side_vec = bottom_outer_2 - bottom_outer_1;
+        let up_vec = Vec3::Y;
+        let normal = side_vec.cross(up_vec).normalize();
+        
+        // Spawn the base frame
+        commands
+            .spawn((
+                Mesh3d(meshes.add(frame_mesh)),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: BASE_COLOR,
+                    cull_mode: None,
+                    double_sided: true,
+                    ..default()
+                })),
+                Transform::default(),
+                BaseFrame { side_index: i },
+                GameEntity,
+                RotableComponent
+            ));
+        
+        // Determine which pyramid face this side aligns with
+        let face_index = i / sides_per_corner;
+        
+        // Create and spawn the door (pentagon) that covers the hole
+        let door_mesh = create_pentagon_door(
+            bottom_outer_1,
+            bottom_outer_2,
+            top_outer_1,
+            top_outer_2,
+            normal,
+        );
+        
+        // Door color: slightly darker brown with a visible border effect
+        let door_color = Color::srgb(0.49, 0.24, 0.00);
+        
+        commands.spawn((
+            Mesh3d(meshes.add(door_mesh)),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: door_color,
+                cull_mode: None,
+                double_sided: true,
+                ..default()
+            })),
+            Transform::default(),
+            BaseDoor {
+                side_index: i,
+                face_index: face_index.min(2), // Clamp to 0-2
+                is_open: false,
+            },
+            GameEntity,
+        ));
+    }
+
+    // Spawn a circular or polygonal lid at GROUND_Y + BASE_HEIGHT
+    let top_y = GROUND_Y + BASE_HEIGHT;
+    
+    // Create a polygon mesh matching the base's shape
+    let top_lid_mesh = create_top_lid_mesh(base_radius, BASE_NR_SIDES, game_state.pyramid_start_orientation_rad);
+    
+    commands.spawn((
+        Mesh3d(meshes.add(top_lid_mesh)),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: BASE_COLOR,
+            cull_mode: None,
+            double_sided: true,
+            ..default()
+        })),
+        Transform::from_xyz(0.0, top_y, 0.0),
+        RotableComponent, 
+        GameEntity,
+    ));
+}
+
+
+/// Creates a polygonal lid mesh for the top of the base
+fn create_top_lid_mesh(radius: f32, sides: usize, start_orientation: f32) -> Mesh {
+    let mut mesh = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        Default::default(),
+    );
+    
+    let angle_increment = std::f32::consts::TAU / sides as f32;
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+    
+    // Center vertex
+    positions.push([0.0, 0.0, 0.0]);
+    normals.push([0.0, 1.0, 0.0]);
+    uvs.push([0.5, 0.5]);
+    
+    // Create vertices around the perimeter
+    for i in 0..sides {
+        let angle = i as f32 * angle_increment + start_orientation;
+        let x = radius * angle.cos();
+        let z = radius * angle.sin();
+        
+        positions.push([x, 0.0, z]);
+        normals.push([0.0, 1.0, 0.0]);
+        uvs.push([x / radius * 0.5 + 0.5, z / radius * 0.5 + 0.5]);
+    }
+    
+    // Create triangles (fan triangulation from center)
+    for i in 1..=sides {
+        let next = if i == sides { 1 } else { i + 1 };
+        indices.extend_from_slice(&[0, i as u32, next as u32]);
+    }
+    
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(bevy::mesh::Indices::U32(indices));
+    
+    mesh
+}
+
+
+
+/// Creates a rectangular frame mesh with a pentagonal hole cut out in the center
+fn create_frame_with_hole(
+    bottom_left: Vec3,
+    bottom_right: Vec3,
+    top_left: Vec3,
+    top_right: Vec3,
+) -> Mesh {
+    let mut mesh = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        Default::default(),
+    );
+    
+    // Calculate the center of the rectangle
+    let center = (bottom_left + bottom_right + top_left + top_right) / 4.0;
+    
+    // Calculate the width and height of the rectangle
+    let width = bottom_left.distance(bottom_right);
+    let height = bottom_left.distance(top_left);
+    
+    // Calculate the normal
+    let side_vec = bottom_right - bottom_left;
+    let up_vec = top_left - bottom_left;
+    let normal = side_vec.cross(up_vec).normalize();
+    
+    // Create pentagon hole vertices (scaled down from center)
+    let hole_scale = 0.4; // Pentagon is 40% of the panel size
+    let pentagon_radius = (width.min(height) * hole_scale) / 2.0;
+    
+    // Pentagon vertices (5 points)
+    let pentagon_points = 5;
+    let pentagon_angle_offset = -std::f32::consts::FRAC_PI_2; // Start from top
+    let mut pentagon_vertices = Vec::new();
+    
+    // Local coordinate system for the rectangle
+    let local_right = (bottom_right - bottom_left).normalize();
+    let local_up = (top_left - bottom_left).normalize();
+    
+    for i in 0..pentagon_points {
+        let angle = (i as f32 * std::f32::consts::TAU / pentagon_points as f32) + pentagon_angle_offset;
+        let x_offset = angle.cos() * pentagon_radius;
+        let y_offset = angle.sin() * pentagon_radius;
+        
+        let vertex = center + local_right * x_offset + local_up * y_offset;
+        pentagon_vertices.push(vertex);
+    }
+    
+    // Build vertices: 4 outer corners + 5 pentagon vertices
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    
+    // Outer rectangle vertices (0-3)
+    positions.push(bottom_left.to_array());
+    positions.push(bottom_right.to_array());
+    positions.push(top_right.to_array());
+    positions.push(top_left.to_array());
+    
+    // Pentagon hole vertices (4-8)
+    for vertex in &pentagon_vertices {
+        positions.push(vertex.to_array());
+    }
+    
+    // All vertices share the same normal
+    for _ in 0..positions.len() {
+        normals.push(normal.to_array());
+    }
+    
+    // Create triangles connecting the outer rectangle to the inner pentagon
+    let mut indices = Vec::new();
+    
+    // We need to triangulate the frame by connecting outer edges to pentagon edges
+    // Strategy: divide the frame into sections and triangulate each
+    
+    // Bottom section: connect bottom edge to bottom pentagon edges
+    indices.extend_from_slice(&[0, 1, 4]); // bottom-left to bottom-right to pentagon[0]
+    indices.extend_from_slice(&[1, 5, 4]); // bottom-right to pentagon[1] to pentagon[0]
+    
+    // Right section: connect right edge to right pentagon edges
+    indices.extend_from_slice(&[1, 2, 5]); // bottom-right to top-right to pentagon[1]
+    indices.extend_from_slice(&[2, 6, 5]); // top-right to pentagon[2] to pentagon[1]
+    
+    // Top section: connect top edge to top pentagon edges
+    indices.extend_from_slice(&[2, 3, 6]); // top-right to top-left to pentagon[2]
+    indices.extend_from_slice(&[3, 7, 6]); // top-left to pentagon[3] to pentagon[2]
+    
+    // Left section: connect left edge to left pentagon edges
+    indices.extend_from_slice(&[3, 0, 7]); // top-left to bottom-left to pentagon[3]
+    indices.extend_from_slice(&[0, 4, 7]); // bottom-left to pentagon[0] to pentagon[3]
+    
+    // Fill the gap between pentagon[3] and pentagon[4]
+    indices.extend_from_slice(&[7, 4, 8]); // pentagon[3] to pentagon[0] to pentagon[4]
+    indices.extend_from_slice(&[4, 8, 7]); // Additional triangle if needed
+    
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_indices(bevy::mesh::Indices::U32(indices));
+    
+    mesh
+}
+
+/// Creates a pentagon door mesh that fits in the hole
+fn create_pentagon_door(
+    bottom_left: Vec3,
+    bottom_right: Vec3,
+    top_left: Vec3,
+    top_right: Vec3,
+    normal: Vec3,
+) -> Mesh {
+    let mut mesh = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        Default::default(),
+    );
+    
+    // Calculate the center of the rectangle
+    let center = (bottom_left + bottom_right + top_left + top_right) / 4.0;
+    
+    // Calculate the width and height
+    let width = bottom_left.distance(bottom_right);
+    let height = bottom_left.distance(top_left);
+    
+    // Pentagon parameters (matching the hole)
+    let hole_scale = 0.4;
+    let pentagon_radius = (width.min(height) * hole_scale) / 2.0;
+    
+    // Slightly offset the door forward to prevent z-fighting
+    let door_center = center + normal * 0.001;
+    
+    // Local coordinate system
+    let local_right = (bottom_right - bottom_left).normalize();
+    let local_up = (top_left - bottom_left).normalize();
+    
+    // Create pentagon vertices
+    let pentagon_points = 5;
+    let pentagon_angle_offset = -std::f32::consts::FRAC_PI_2;
+    
+    let mut positions = Vec::new();
+    let mut normals_vec = Vec::new();
+    
+    // Center vertex
+    positions.push(door_center.to_array());
+    normals_vec.push(normal.to_array());
+    
+    // Pentagon vertices
+    for i in 0..pentagon_points {
+        let angle = (i as f32 * std::f32::consts::TAU / pentagon_points as f32) + pentagon_angle_offset;
+        let x_offset = angle.cos() * pentagon_radius;
+        let y_offset = angle.sin() * pentagon_radius;
+        
+        let vertex = door_center + local_right * x_offset + local_up * y_offset;
+        positions.push(vertex.to_array());
+        normals_vec.push(normal.to_array());
+    }
+    
+    // Create triangles (fan triangulation from center)
+    let mut indices = Vec::new();
+    for i in 1..=pentagon_points {
+        let next = if i == pentagon_points { 1 } else { i + 1 };
+        indices.extend_from_slice(&[0, i as u32, next as u32]);
+    }
+    
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals_vec);
+    mesh.insert_indices(bevy::mesh::Indices::U32(indices));
+    
+    mesh
+}
+
 /// Spawns a pyramid composed with three triangular faces.
 pub fn spawn_pyramid(
     commands: &mut Commands,
@@ -18,6 +365,9 @@ pub fn spawn_pyramid(
     random_gen: &mut ResMut<RandomGen>,
     game_state: &mut GameState,
 ) {
+    // First spawn the base
+    spawn_pyramid_base(commands, meshes, materials, game_state);
+    
     let top_vex = Vec3::new(0.0, game_state.pyramid_height, 0.0);
     // Build the symmetric triangular vertices for the base of the pyramid.
     let mut base_corners: [Vec3; 3] = [Vec3::ZERO; 3];

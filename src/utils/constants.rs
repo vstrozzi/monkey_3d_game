@@ -55,7 +55,7 @@ pub mod pyramid_constants {
 
     // Wooden base
     pub const BASE_HEIGHT: f32 = 0.3;
-    pub const BASE_COLOR: Color = Color::srgb(0.59, 0.29, 0.00);
+    pub const BASE_COLOR: Color = Color::srgb(0.59, 0.29, 0.00); // brown
     pub const BASE_NR_SIDES: usize = 12; // multiple of 3
 
 }
