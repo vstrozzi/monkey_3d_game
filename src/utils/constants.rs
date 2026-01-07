@@ -11,7 +11,7 @@ pub mod camera_3d_constants {
 
     // Radius range for the camera's orbit.
     pub const CAMERA_3D_MIN_RADIUS: f32 = 5.0;
-    pub const CAMERA_3D_MAX_RADIUS: f32 = 50.0;
+    pub const CAMERA_3D_MAX_RADIUS: f32 = 20.0;
 }
 
 /// Game objects
@@ -56,13 +56,15 @@ pub mod pyramid_constants {
     // Wooden base
     pub const BASE_HEIGHT: f32 = 0.3;
     pub const BASE_COLOR: Color = Color::srgb(0.59, 0.29, 0.00); // brown
-    pub const BASE_NR_SIDES: usize = 15; // multiple of 3
+    pub const BASE_NR_SIDES: usize = 9; // multiple of 3
 
 }
 
 /// Generic game constants
 pub mod game_constants {
     pub const REFRESH_RATE_HZ: f64 = 60.0; // Hz
+
+    pub const UNLOCK_SOL_NR: usize = 3; // Number of consecutive correct disalignments to unlock
 
     // Seed for the random number generator.
     pub const SEED: u64 = 69;

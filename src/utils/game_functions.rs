@@ -132,6 +132,8 @@ pub fn check_face_alignment(
                 }
             }
         }
+
+        // if the player has not won and did too many attempts, open door of solution
     }
 }
 
