@@ -6,7 +6,7 @@ pub struct DebugFunctionsPlugin;
 impl Plugin for DebugFunctionsPlugin {
     /// Pplugin by adding the `toggle_vsync` system to the app.
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, toggle_vsync);
+        app.add_systems(Update, (toggle_vsync, visualize_lights));
     }
 }
 
@@ -25,5 +25,27 @@ fn toggle_vsync(
         };
 
         info!("PRESENT_MODE: {:?}", window.present_mode);
+    }
+}
+
+/// Visualizes lights when the 'L' key is pressed.
+fn visualize_lights(
+    mut gizmos: Gizmos,
+    query: Query<(&GlobalTransform, &PointLight)>,
+    input: Res<ButtonInput<KeyCode>>,
+    mut show_lights: Local<bool>,
+) {
+    if input.just_pressed(KeyCode::KeyL) {
+        *show_lights = !*show_lights;
+        info!("Light visualization: {}", *show_lights);
+    }
+
+    if *show_lights {
+        for (transform, light) in &query {
+            // Draw a sphere representing the light's range
+            gizmos.sphere(transform.translation(), light.range, light.color);
+            // Draw a smaller sphere representing the light source itself
+            gizmos.sphere(transform.translation(), 0.2, Color::WHITE);
+        }
     }
 }

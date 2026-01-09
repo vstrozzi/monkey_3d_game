@@ -57,6 +57,9 @@ pub mod pyramid_constants {
     pub const BASE_HEIGHT: f32 = 0.3;
     pub const BASE_COLOR: Color = Color::srgb(0.59, 0.29, 0.00); // brown
     pub const BASE_NR_SIDES: usize = 9; // multiple of 3
+    pub const BASE_HOLES_LIGHT_Y_OFFSET: f32 = 0.00; // Y offset of the light holes from the Y of the holes itself
+    pub const BASE_HOLES_LIGHT_OFFSET_CENTER: f32 = -0.4; // Offset of the light holes from the normal of center of the hole
+
 
 }
 
@@ -71,4 +74,9 @@ pub mod game_constants {
 
     // Allowed misalignment camera and correct face normal (cosine of normal vectore camera and face angle)
     pub const COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD: f32 = -0.9; 
+
+    // Animation durations for the door
+    pub const DOOR_ANIMATION_FADE_OUT_DURATION: f32 = 0.5;
+    pub const DOOR_ANIMATION_STAY_OPEN_DURATION: f32 = 0.5;
+    pub const DOOR_ANIMATION_FADE_IN_DURATION: f32 = 0.5;
 }

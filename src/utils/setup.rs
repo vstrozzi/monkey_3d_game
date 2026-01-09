@@ -1,6 +1,10 @@
 //! Setup logic for the monkey_3d_game, with main setup plugin and functions for initializing the game scene and state.
 use bevy::prelude::*;
 
+use bevy::asset::RenderAssetUsages;
+use bevy::render::render_resource::{PrimitiveTopology};
+use bevy::mesh::Indices;
+
 use crate::log;
 use crate::utils::constants::{
     camera_3d_constants::{CAMERA_3D_INITIAL_X, CAMERA_3D_INITIAL_Y, CAMERA_3D_INITIAL_Z},
@@ -54,67 +58,24 @@ pub fn setup(
         GameEntity,
     ));
 
-    // Back plane
+    // Semicircle Wall surrounding the pyramid
     commands.spawn((
-    Mesh3d(meshes.add(Plane3d{normal: Dir3::Z, half_size: Vec2::splat(0.5)}.mesh().size(15.0, 10.0))),
-    MeshMaterial3d(materials.add(StandardMaterial {
-        base_color: Color::BLACK,
-        perceptual_roughness: 0.2,
-        reflectance:0.9,
-        ..default()
-    })),
-    Transform::from_xyz(0.0, GROUND_Y, -2.0),
-    GameEntity,
-    ));
-
-    // Constants for clarity
-    const PLANE_WIDTH: f32 = 15.0;
-    const PLANE_DISTANCE: f32 = 7.0;
-    const PLANE_HEIGHT: f32 = 10.0;
-    const ANGLE_RAD: f32 = 40.0 * std::f32::consts::PI / 180.0; // 15 degrees in radians
-
-    // Right Side Plane
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d { 
-            normal: Dir3::Z, 
-            half_size: Vec2::new(PLANE_WIDTH / 2.0, PLANE_HEIGHT / 2.0) 
-        })),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.2, 0.2, 0.2), // Slightly lighter than black to see the edge
-            perceptual_roughness: 0.2,
-            reflectance: 0.9,
-            ..default()
-        })),
-        Transform::from_xyz(
-            (PLANE_DISTANCE / 2.0) + (PLANE_DISTANCE * ANGLE_RAD.cos()), 
-            GROUND_Y, 
-            -2.0 + (PLANE_DISTANCE * ANGLE_RAD.sin())
-        ).with_rotation(Quat::from_rotation_y(-ANGLE_RAD)),
-        GameEntity,
-    ));
-
-    // Left Side Plane
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d { 
-            normal: Dir3::Z, 
-            half_size: Vec2::new(PLANE_WIDTH / 2.0, PLANE_HEIGHT / 2.0) 
-        })),
+        Mesh3d(meshes.add(create_semicircle_mesh(9.0, 10.0, 64))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.2, 0.2, 0.2),
             perceptual_roughness: 0.2,
             reflectance: 0.9,
+            cull_mode: None,
             ..default()
         })),
-        Transform::from_xyz(
-            -(PLANE_DISTANCE / 2.0) - (PLANE_DISTANCE * ANGLE_RAD.cos()), 
-            GROUND_Y, 
-            -2.0 + (PLANE_WIDTH / 2.0 * ANGLE_RAD.sin())
-        ).with_rotation(Quat::from_rotation_y(ANGLE_RAD)),
+        // The mesh is generated centered at (0,0) with radius 12.
+        // It forms a semicircle from +X through -Z to -X.
+        Transform::from_xyz(0.0, GROUND_Y, 0.0),
         GameEntity,
     ));
 
     // Game light
-    commands.spawn((
+/*     commands.spawn((
         PointLight {
             intensity: 2_000_000.0,
             shadows_enabled: true,
@@ -122,7 +83,9 @@ pub fn setup(
         },
         Transform::from_xyz(0.0, 3.0, 4.0),
         GameEntity,
-    ));
+    )); */
+
+
 
     // Ambient light
     commands.insert_resource(AmbientLight {
@@ -203,6 +166,12 @@ pub fn setup_game_state(
 
         nr_attempts: 0,
         cosine_alignment: None,
+
+        animating_door: None,
+        animating_light: None,
+        animation_start_time: None,
+        is_animating: false,
+        pending_phase: None,
     };
 
 
@@ -210,4 +179,56 @@ pub fn setup_game_state(
     commands.insert_resource(game_state);
 
     return cloned_game_state;
+}
+
+fn create_semicircle_mesh(radius: f32, height: f32, segments: u32) -> Mesh {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+
+    // Semicircle from 0 to PI (Right to Left, facing inward)
+    for i in 0..=segments {
+        let t = i as f32 / segments as f32;
+        let angle = t * std::f32::consts::PI; 
+
+        // x = R * cos(angle), z = -R * sin(angle)
+        // angle=0 -> (R, 0, 0)
+        // angle=PI/2 -> (0, 0, -R) (Back)
+        // angle=PI -> (-R, 0, 0)
+        let x = radius * angle.cos();
+        let z = -radius * angle.sin();
+
+        // Normal points outwards (to center)
+        let normal = Vec3::new(x, 0.0, z).normalize();
+
+        // Bottom vertex
+        positions.push([x, 0.0, z]);
+        normals.push([normal.x, normal.y, normal.z]);
+        uvs.push([t, 1.0]);
+
+        // Top vertex
+        positions.push([x, height, z]);
+        normals.push([normal.x, normal.y, normal.z]);
+        uvs.push([t, 0.0]);
+    }
+
+    for i in 0..segments {
+        let base = i * 2;
+        // CCW winding for inward face
+        indices.push(base);     // Bottom Current
+        indices.push(base + 2); // Bottom Next
+        indices.push(base + 1); // Top Current
+
+        indices.push(base + 1); // Top Current
+        indices.push(base + 2); // Bottom Next
+        indices.push(base + 3); // Top Next
+    }
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
 }

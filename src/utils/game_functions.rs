@@ -1,10 +1,16 @@
 //! Core game logic and UI functions.
 use bevy::prelude::*;
 
-use crate::utils::constants::game_constants::COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD;
-use crate::utils::objects::{
-    FaceMarker, GameEntity, GamePhase, GameState, Pyramid, RandomGen, UIEntity,
+use crate::utils::constants::game_constants::{
+    COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD, DOOR_ANIMATION_FADE_IN_DURATION,
+    DOOR_ANIMATION_FADE_OUT_DURATION, DOOR_ANIMATION_STAY_OPEN_DURATION,
 };
+use crate::utils::objects::{
+    BaseDoor, BaseFrame, FaceMarker, GameEntity, GamePhase, GameState, HoleLight, Pyramid,
+    UIEntity,
+};
+
+use crate::utils::objects::RandomGen;
 use crate::utils::setup::setup;
 
 /// A plugin for handling game functions, including checking for face alignment and managing the game UI.
@@ -17,6 +23,7 @@ impl Plugin for GameFunctionsPlugin {
             Update,
             ((
                 crate::utils::game_functions::check_face_alignment,
+                crate::utils::game_functions::handle_door_animation,
                 crate::utils::game_functions::game_ui,
             )
                 .chain(),),
@@ -79,11 +86,15 @@ pub fn check_face_alignment(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut game_state: ResMut<GameState>,
+    mut materials: ResMut<Assets<StandardMaterial>>, // Added access to materials
     camera_query: Query<&Transform, With<Camera3d>>,
     face_query: Query<(&Transform, &FaceMarker), With<Pyramid>>,
+    mut door_query: Query<(Entity, &BaseDoor, &mut MeshMaterial3d<StandardMaterial>)>, // Made mutable for material replacement
+    light_query: Query<Entity, With<HoleLight>>,
+    frame_query: Query<(&BaseFrame, &Children)>,
 ) {
-    // Only check if the game is in Playing state
-    if game_state.phase != GamePhase::Playing {
+    // Only check if the game is in Playing state and NOT animating
+    if game_state.phase != GamePhase::Playing || game_state.is_animating {
         return;
     }
     // Check for SPACE key press to check alignment
@@ -93,6 +104,7 @@ pub fn check_face_alignment(
         let Ok(camera_transform) = camera_query.single() else {
             return;
         };
+        // ... (rest of function)
         // Get camera direction
         let camera_forward = camera_transform.local_z();
 
@@ -101,6 +113,7 @@ pub fn check_face_alignment(
         // (i.e. face is facing camera)
         let mut best_alignment = 1.0;
         let mut best_face_index = None;
+        let mut best_face_alignment_val = None; // For winning condition check
 
         for (face_transform, face_marker) in &face_query {
             // Get face normal in world space
@@ -115,25 +128,176 @@ pub fn check_face_alignment(
             if alignment < best_alignment {
                 best_alignment = alignment;
                 best_face_index = Some(face_marker.face_index);
+                best_face_alignment_val = Some(alignment);
             }
         }
 
-        // Check if aligned enough (within margin)
         if let Some(best_face_index) = best_face_index {
-            // Check if the cosine alignment is good enough
-            if best_alignment < COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD {
-                // Check if the face is the correct one
-                if best_face_index == game_state.pyramid_target_face_index {
-                    // Transition to Won state
-                    game_state.phase = GamePhase::Won;
-                    game_state.end_time = Some(time.elapsed());
-                    game_state.cosine_alignment = Some(best_alignment);
-                    game_state.is_changed = true;
+            // Determine if the player wins
+            let has_won = if let Some(alignment) = best_face_alignment_val {
+                 alignment < COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD && best_face_index == game_state.pyramid_target_face_index
+            } else {
+                false
+            };
+            
+            // Set pending phase based on win condition
+            if has_won {
+                 game_state.pending_phase = Some(GamePhase::Won);
+                 game_state.end_time = Some(time.elapsed());
+                 game_state.cosine_alignment = best_face_alignment_val;
+            } else {
+                game_state.pending_phase = Some(GamePhase::Playing); // Continue playing if lost
+            }
+
+            // --- ANIMATION START LOGIC ---
+            // Find the door to animate.
+            // We want the door on the 'best_face_index', specifically the one most aligned with the camera.
+            // A face has 3 doors (indices from `best_face_index * 3` to `best_face_index * 3 + 2`).
+            // We can check which of these 3 doors has a normal most opposed to the camera forward vector.
+            // However, simply picking the middle one often works well for "center of face".
+            // The user says "open up the hole closer to the winning face/angle".
+            
+            let mut best_door_entity = None;
+
+            // Find the door which matches the best_face_index and is the center door
+             for (entity, door, _) in &door_query {
+                if door.face_index == best_face_index  && door.is_center_door {
+                     best_door_entity = Some(entity);
+                     break; 
                 }
             }
-        }
 
-        // if the player has not won and did too many attempts, open door of solution
+
+            if let Some(door_entity) = best_door_entity {
+                // Determine which door entity we are modifying
+                
+                // IMPORTANT: Ensure the door has a unique material so we only fade THIS door.
+                if let Ok((_, _, mut mat_handle)) = door_query.get_mut(door_entity) {
+                    if let Some(material) = materials.get(&mat_handle.0) {
+                        let mut new_material = material.clone();
+                        // Reset alpha just in case
+                        new_material.base_color.set_alpha(1.0); 
+                        // Add as new asset
+                        mat_handle.0 = materials.add(new_material);
+                    }
+                }
+
+                 // Find the corresponding light.
+                 // The light is a child of the `BaseFrame`. We need to find the `BaseFrame` with the same `side_index` as the door.
+                 
+                 // Reuse door info to find the frame
+                 let door_side_index = door_query.get(door_entity).unwrap().1.side_index;
+
+                 let mut found_light = None;
+
+                 // Iterate frames to find the one with correct side index
+                 for (frame, children) in &frame_query {
+                     if frame.side_index == door_side_index {
+                        // Check children for HoleLight
+                        for child in children {
+                            if light_query.get(*child).is_ok() {
+                                found_light = Some(*child);
+                                break;
+                            }
+                        }
+                     }
+                     if found_light.is_some() { break; }
+                 }
+
+                 if let Some(light_entity) = found_light {
+                     // Start Animation
+                     game_state.is_animating = true;
+                     game_state.animating_door = Some(door_entity);
+                     game_state.animating_light = Some(light_entity);
+                     game_state.animation_start_time = Some(time.elapsed());
+                 }
+            }
+        }
+    }
+}
+
+/// Handles the door animation state machine
+pub fn handle_door_animation(
+    mut game_state: ResMut<GameState>,
+    time: Res<Time>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut light_query: Query<&mut Visibility, With<HoleLight>>,
+    door_query: Query<&MeshMaterial3d<StandardMaterial>, With<BaseDoor>>,
+) {
+    if !game_state.is_animating {
+        return;
+    }
+
+    let Some(start_time) = game_state.animation_start_time else { return; };
+    let elapsed = (time.elapsed() - start_time).as_secs_f32();
+
+    let door_entity = game_state.animating_door.unwrap();
+    let light_entity = game_state.animating_light.unwrap();
+
+    let fade_out_end = DOOR_ANIMATION_FADE_OUT_DURATION;
+    let stay_open_end = fade_out_end + DOOR_ANIMATION_STAY_OPEN_DURATION;
+    let fade_in_end = stay_open_end + DOOR_ANIMATION_FADE_IN_DURATION;
+
+    // Get material handle
+    let Ok(material_handle) = door_query.get(door_entity) else { return; };
+    let Some(material) = materials.get_mut(material_handle) else { return; };
+
+    // Get light visibility
+    let Ok(mut light_visibility) = light_query.get_mut(light_entity) else { return; };
+
+
+    if elapsed < fade_out_end {
+        // Phase 1: Fade Out (Opening)
+        // Light should be visible immediately
+        *light_visibility = Visibility::Visible;
+        
+        let t = elapsed / DOOR_ANIMATION_FADE_OUT_DURATION;
+        // Alpha goes from 1.0 to 0.0
+        let alpha = 1.0 - t.clamp(0.0, 1.0);
+        material.base_color.set_alpha(alpha);
+
+    } else if elapsed < stay_open_end {
+        // Phase 2: Stay Open
+        *light_visibility = Visibility::Visible;
+        material.base_color.set_alpha(0.0);
+
+    } else if elapsed < fade_in_end {
+        // Phase 3: Fade In (Closing)
+        // Light should still be visible? "When closing remember to not render the light anymore". 
+        // Maybe turn it off at the start of closing? Or at end?
+        // Prompt: "stay open for 0.5 sec and then close. (i.e. becpomming back fully visible) When closing remember to not render the light anymore."
+        // Interpreting "When closing..." as "When the closing process is happening or finishes?"
+        // Usually "When closing" implies the transition. If the door is becoming visible, the light inside might be occluded physically, 
+        // but if we want to save performance or logic, maybe turn it off?
+        // Let's assume we turn it off *after* it's closed, or linear fade?
+        // But the prompt says "When closing...".
+        // Let's keep it visible during the fade in (so we see the door closing over the light) and turn off at the very end.
+        *light_visibility = Visibility::Visible;
+        
+        let t = (elapsed - stay_open_end) / DOOR_ANIMATION_FADE_IN_DURATION;
+        // Alpha goes from 0.0 to 1.0
+        let alpha = t.clamp(0.0, 1.0);
+        material.base_color.set_alpha(alpha);
+
+    } else {
+        // Animation Finished
+        material.base_color.set_alpha(1.0);
+        *light_visibility = Visibility::Hidden; // Turn off light
+
+        game_state.is_animating = false;
+        game_state.animating_door = None;
+        game_state.animating_light = None;
+        game_state.animation_start_time = None;
+
+        // Transition to pending phase
+        if let Some(next_phase) = game_state.pending_phase {
+            game_state.phase = next_phase;
+            game_state.is_changed = true; // Trigger UI update
+            
+            // If we didn't win, we need to handle "attempts" counting or whatever logic was deferred?
+            // Attempts were already incremented.
+        }
+        game_state.pending_phase = None;
     }
 }
 
@@ -160,7 +324,7 @@ pub fn game_ui(
         commands.entity(entity).despawn();
     }
 
-    // State Machine using match pattern
+    // State Machine
     match game_state.phase {
         GamePhase::NotStarted => {
             if keyboard.just_pressed(KeyCode::Space) {

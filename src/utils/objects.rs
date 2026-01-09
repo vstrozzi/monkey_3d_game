@@ -92,6 +92,13 @@ pub struct GameState {
     pub nr_attempts: u32,
     // The cosine alignment of the camera with the target face when the player wins.
     pub cosine_alignment: Option<f32>,
+
+    // Animation state
+    pub animating_door: Option<Entity>,
+    pub animating_light: Option<Entity>,
+    pub animation_start_time: Option<Duration>,
+    pub is_animating: bool,
+    pub pending_phase: Option<GamePhase>, // Phase to transition to after animation
 }
 
 /// Random number generator
@@ -135,6 +142,10 @@ pub struct FaceMarker {
 #[derive(Component)]
 pub struct RotableComponent;
 
+// A component that marks a pointlight as being one of the hole
+#[derive(Component)]
+pub struct HoleLight;
+
 /// A component that marks an entity as a game entity, which can be cleared during setup
 #[derive(Component)]
 pub struct GameEntity;
@@ -155,4 +166,5 @@ pub struct BaseDoor {
     pub side_index: usize,
     pub face_index: usize, // Which pyramid face this aligns with (0, 1, or 2)
     pub is_open: bool,
+    pub is_center_door: bool, // Checks if the door is the center of the face
 }

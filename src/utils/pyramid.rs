@@ -3,7 +3,7 @@
 use crate::utils::constants::{object_constants::GROUND_Y, pyramid_constants::*};
 use crate::utils::objects::{
     Decoration, DecorationSet, DecorationShape, FaceMarker, GameEntity, GameState, Pyramid,
-    PyramidType, RandomGen, RotableComponent, BaseFrame, BaseDoor,
+    PyramidType, RandomGen, RotableComponent, BaseFrame, BaseDoor, HoleLight,
 };
 use bevy::prelude::*;
 
@@ -63,7 +63,11 @@ pub fn spawn_pyramid_base(
         let up_vec = Vec3::Y;
         let normal = side_vec.cross(up_vec).normalize();
         
-        // Spawn the base frame
+        // Calculate light position 
+        let center = (bottom_outer_1 + bottom_outer_2 + top_outer_1 + top_outer_2) / 4.0;
+        let light_pos = center - normal * BASE_HOLES_LIGHT_OFFSET_CENTER + Vec3::Y * BASE_HOLES_LIGHT_Y_OFFSET ;
+
+        // Spawn the base frame and a light in front to have a nice effect
         commands
             .spawn((
                 Mesh3d(meshes.add(frame_mesh)),
@@ -77,7 +81,21 @@ pub fn spawn_pyramid_base(
                 BaseFrame { side_index: i },
                 GameEntity,
                 RotableComponent
-            ));
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    PointLight {
+                        intensity: 1_000_000.0,
+                        shadows_enabled: true,
+                        ..default()
+                    },
+                    Transform::from_translation(light_pos),
+                    GameEntity,
+                    // Initially hidden
+                    HoleLight,
+                    Visibility::Hidden,
+                ));
+            });
         
         // Determine which pyramid face this side aligns with
         let face_index = i / sides_per_corner;
@@ -92,14 +110,19 @@ pub fn spawn_pyramid_base(
         );
         
         // Door color: slightly darker brown with a visible border effect
-        let door_color = Color::srgb(0.49, 0.24, 0.00);
+        // Alpha mode Blend to allow transparency changes
+        let door_color = Color::srgba(0.49, 0.24, 0.00, 1.0);
         
+        let is_center = (i % sides_per_corner) == (sides_per_corner / 2);
+
+        // Spawn the door entity
         commands.spawn((
             Mesh3d(meshes.add(door_mesh)),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: door_color,
                 cull_mode: None,
                 double_sided: false,
+                alpha_mode: AlphaMode::Blend,
                 ..default()
             })),
             Transform::default(),
@@ -107,15 +130,15 @@ pub fn spawn_pyramid_base(
                 side_index: i,
                 face_index: face_index.min(2), // Clamp to 0-2
                 is_open: false,
+                is_center_door: is_center,
             },
             GameEntity,
             RotableComponent,
         ));
-
         
     }
 
-    // Spawn a circular or polygonal lid at GROUND_Y + BASE_HEIGHT
+    // Spawn The top lid of the base
     let top_y = GROUND_Y + BASE_HEIGHT;
     
     // Create a polygon mesh matching the base's shape
@@ -447,7 +470,7 @@ pub fn spawn_pyramid(
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: game_state.pyramid_color_faces[i],
                     cull_mode: None, // Disable backface culling to render both sides of the face.
-                    double_sided: true,
+                    double_sided: false ,
                     ..default()
                 })),
                 Transform::default(),
@@ -613,7 +636,6 @@ fn spawn_decorations_from_set(
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: decoration_set.color,
-                    cull_mode: None,
                     ..default()
                 })),
                 Transform {
@@ -719,7 +741,7 @@ fn create_star_mesh(size: f32, points: usize) -> Mesh {
 
     // Add the center point of the star
     positions.push([0.0, 0.0, 0.0]);
-    normals.push([0.0, 1.0, 0.0]);
+    normals.push([0.0, -1.0, 0.0]);
     uvs.push([0.5, 0.5]);
 
     // Create the points of the star
@@ -731,7 +753,7 @@ fn create_star_mesh(size: f32, points: usize) -> Mesh {
         let y = angle.sin() * radius;
 
         positions.push([x, y, 0.0]);
-        normals.push([0.0, 1.0, 0.0]);
+        normals.push([0.0, -1.0, 0.0]);
         uvs.push([x / size * 0.5 + 0.5, y / size * 0.5 + 0.5]);
     }
 
@@ -763,7 +785,7 @@ fn create_triangle_mesh(size: f32) -> Mesh {
         [size, -height * 0.333, 0.0],
     ];
 
-    let normals = vec![[0.0, 1.0, 0.0]; 3];
+    let normals = vec![[0.0, -1.0, 0.0]; 3];
     let uvs = vec![[0.5, 1.0], [0.0, 0.0], [1.0, 0.0]];
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
