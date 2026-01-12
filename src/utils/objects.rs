@@ -72,10 +72,11 @@ pub struct GameState {
     pub pyramid_type: PyramidType,
     pub pyramid_base_radius: f32,
     pub pyramid_height: f32,
-    // The index of the target face of the pyramid.
-    pub pyramid_target_face_index: usize,
     pub pyramid_start_orientation_rad: f32,
     pub pyramid_color_faces: [Color; 3],
+
+    // The winning door side index
+    pub pyramid_target_door_index: usize,
 
     // The time when the game started.
     pub start_time: Option<Duration>,
@@ -122,15 +123,6 @@ impl Default for RandomGen {
 #[derive(Component)]
 pub struct Pyramid;
 
-/// Face of pyramid component.
-#[derive(Component)]
-pub struct FaceMarker {
-    pub face_index: usize,
-    pub color: Color,
-    pub normal: Vec3,
-    /// The decorations on this face (if any)
-    pub decorations: Option<DecorationSet>,
-}
 
 
 // A component that mars an entity to be rotated by the camera controls
@@ -152,14 +144,13 @@ pub struct UIEntity;
 /// Component to mark the base frame (wooden panel with hole)
 #[derive(Component)]
 pub struct BaseFrame {
-    pub side_index: usize,
+    pub door_index: usize,
 }
 
 /// Component to mark the base door (pentagon that covers the hole)
 #[derive(Component)]
 pub struct BaseDoor {
-    pub side_index: usize,
-    pub face_index: usize, // Which pyramid face this aligns with (0, 1, or 2)
+    pub door_index: usize,
+    pub normal: Vec3,   // In world coordinates
     pub is_open: bool,
-    pub is_center_door: bool, // Checks if the door is the center of the face
 }

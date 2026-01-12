@@ -6,46 +6,10 @@ use crate::utils::constants::game_constants::{
     DOOR_ANIMATION_FADE_OUT_DURATION, DOOR_ANIMATION_STAY_OPEN_DURATION,
 };
 use crate::utils::objects::{
-    BaseDoor, BaseFrame, FaceMarker, GameEntity, GamePhase, GameState, HoleLight, Pyramid,
+    BaseDoor, BaseFrame, GameEntity, GamePhase, GameState, HoleLight,
     UIEntity,
 };
-use crate::utils::setup;
 
-/// A plugin for handling game functions, including checking for face alignment and managing the game UI.
-pub struct GameFunctionsPlugin;
-
-impl Plugin for GameFunctionsPlugin {
-    /// Builds the plugin by adding the systems to the app.
-    fn build(&self, app: &mut App) {
-        app.init_state::<GamePhase>()
-            // Intro State
-            .add_systems(OnEnter(GamePhase::MenuUI), setup_intro_ui)
-            .add_systems(
-                Update,
-                menu_inputs.run_if(in_state(GamePhase::MenuUI)),
-            )
-            .add_systems(OnExit(GamePhase::MenuUI), despawn_ui)
-            
-            // Playing State
-            .add_systems(OnEnter(GamePhase::Playing), (setup::setup, setup_playing_ui).chain())
-            .add_systems(
-                Update,
-                (
-                    playing_inputs,
-                    handle_door_animation,
-                ).chain().run_if(in_state(GamePhase::Playing)),
-            )
-            .add_systems(OnExit(GamePhase::Playing), (despawn_ui, cleanup_game_entities))
-            
-            // Won State
-            .add_systems(OnEnter(GamePhase::Won), setup_won_ui)
-            .add_systems(
-                Update,
-                handle_won_input.run_if(in_state(GamePhase::Won)),
-            )
-            .add_systems(OnExit(GamePhase::Won), despawn_ui);
-    }
-}
 
 /// Helper to despawn ui entities given a mutable commands reference
 pub fn despawn_ui_helper(commands: &mut Commands, query: &Query<Entity, With<UIEntity>>) {
@@ -65,6 +29,8 @@ pub fn cleanup_game_entities(mut commands: Commands, query: Query<Entity, With<G
         commands.entity(entity).despawn(); 
     }
 }
+
+
 
 /// Setup UI for MenuUI state
 pub fn setup_intro_ui(mut commands: Commands) {
@@ -95,8 +61,7 @@ pub fn playing_inputs(
     // Queries needed for Playing logic
     mut materials: ResMut<Assets<StandardMaterial>>,
     camera_query: Query<&Transform, With<Camera3d>>,
-    face_query: Query<(&Transform, &FaceMarker), With<Pyramid>>,
-    mut door_query: Query<(Entity, &BaseDoor, &mut MeshMaterial3d<StandardMaterial>)>,
+    mut door_query: Query<(Entity, &BaseDoor, &Transform, &mut MeshMaterial3d<StandardMaterial>)>,
     light_query: Query<Entity, With<HoleLight>>,
     frame_query: Query<(&BaseFrame, &Children)>,
     mut commands: Commands,
@@ -110,105 +75,102 @@ pub fn playing_inputs(
         // Spawn new ui using helper
         spawn_playing_hud(&mut commands, &game_state);
 
-        let Some(camera_transform) = camera_query.iter().next() else {
+        let Ok(camera_transform) = camera_query.single() else {
             return;
         };
 
-        // Get camera direction
-        let camera_forward = camera_transform.local_z();
+        // Get local camera direction
+        let camera_forward = camera_transform.forward();
+        
 
-        // Check which face is most aligned with camera
-        let mut best_alignment = 1.0;
-        let mut best_face_index = None;
-        let mut best_face_alignment_val = None; // For winning condition check
+        // Project camera forward to XZ plane
+        let camera_forward_xz = Vec3::new(camera_forward.x, 0.0, camera_forward.z).normalize();
 
-        for (face_transform, face_marker) in &face_query {
-            // Get face normal in world space
-            let face_normal = (face_transform.rotation * (face_marker.normal)).normalize();
+        let mut best_alignment = -1.0;
+        let mut best_door_index = 0;
 
-            // Project down to XZ plane
-            let face_normal_xz = Vec3::new(face_normal.x, 0.0, face_normal.z).normalize();
-            // Calculate alignment (dot product) of camera direction and face normal
-            let alignment = face_normal_xz.dot(*camera_forward);
 
-            if alignment < best_alignment {
-                best_alignment = alignment;
-                best_face_index = Some(face_marker.face_index);
-                best_face_alignment_val = Some(alignment);
-            }
-        }
-
-        if let Some(best_face_index) = best_face_index {
-            // Determine if the player wins
-            let has_won = if let Some(alignment) = best_face_alignment_val {
-                alignment < COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD && best_face_index == game_state.pyramid_target_face_index
-            } else {
-                false
-            };
+        for (_, door, door_transform, _) in &door_query {
+            // Get door normal in world space and move to camera door's actual rotation
+            let door_normal_world = door_transform.rotation * door.normal;
             
-            // Set pending phase based on win condition
-            if has_won {
-                game_state.pending_phase = Some(GamePhase::Won); // Go to Won on win
-                game_state.end_time = Some(time.elapsed());
-                game_state.cosine_alignment = best_face_alignment_val;
-            } else {
-                game_state.pending_phase = Some(GamePhase::Playing); // Continue playing if lost
+            // Project to XZ plane
+            let door_normal_xz = Vec3::new(door_normal_world.x, 0.0, door_normal_world.z).normalize();
+            
+            // Calculate alignment (dot product)
+            let alignment = door_normal_xz.dot(camera_forward_xz);
+            
+            // Most negative = door facing toward camera
+            if alignment > best_alignment {
+                best_alignment = alignment;
+                best_door_index = door.door_index;
             }
+            
+            println!("Door Index: {}, Alignment: {:.4}", door.door_index, alignment);
+        }
 
-            // --- ANIMATION START LOGIC ---
-            let mut best_door_entity = None;
+        // Determine if the player wins
+        let has_won = best_alignment > COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD && best_door_index == game_state.pyramid_target_door_index;
 
-            // Find the door which matches the best_face_index and is the center door
-            // (Closer to the winning face/angle)
-            for (entity, door, _) in &door_query {
-                if door.face_index == best_face_index  && door.is_center_door {
-                    best_door_entity = Some(entity);
-                    break; 
-                }
-            }
+        // Set pending phase based on win condition
+        if has_won {
+            game_state.pending_phase = Some(GamePhase::Won); // Go to Won
+            game_state.end_time = Some(time.elapsed());
+            game_state.cosine_alignment = Some(best_alignment);
+        } else {
+            game_state.pending_phase = Some(GamePhase::Playing); // Continue playing if lost
+        }
 
-            if let Some(door_entity) = best_door_entity {
-                // Ensure the door has a unique material so we only fade THIS door.
-                if let Ok((_, _, mut mat_handle)) = door_query.get_mut(door_entity) {
-                    if let Some(material) = materials.get(&mat_handle.0) {
-                        let mut new_material = material.clone();
-                        new_material.base_color.set_alpha(1.0); 
-                        mat_handle.0 = materials.add(new_material);
-                    }
-                }
+        // Start animation for the winning door
+        let mut winning_door = None;
 
-                // Find the corresponding light.
-                let door_side_index = door_query.get(door_entity).unwrap().1.side_index;
-                let mut found_light = None;
-
-                // Iterate frames to find the one with correct side index
-                for (frame, children) in &frame_query {
-                    if frame.side_index == door_side_index {
-                        // Check children for HoleLight
-                        for child in children {
-                            if light_query.get(*child).is_ok() {
-                                found_light = Some(*child);
-                                break;
-                            }
-                        }
-                    }
-                    if found_light.is_some() { break; }
-                }
-
-                if let Some(light_entity) = found_light {
-                    // Start Animation
-                    game_state.is_animating = true;
-                    game_state.animating_door = Some(door_entity);
-                    game_state.animating_light = Some(light_entity);
-                    game_state.animation_start_time = Some(time.elapsed());
-                }
+        // Ensure the door has a unique material so we only fade THIS door.
+        for (door_entity, door, _, _) in &door_query {
+            if door.door_index == game_state.pyramid_target_door_index {
+                winning_door = Some(door_entity);
+                break;
             }
         }
+
+        if let Ok(( _, _, _, mut mat_handle)) = door_query.get_mut(winning_door.unwrap()) {
+            if let Some(material) = materials.get(&mat_handle.0) {
+                let mut new_material = material.clone();
+                new_material.base_color.set_alpha(1.0); 
+                mat_handle.0 = materials.add(new_material);
+            }
+        }
+
+        // Find the corresponding light.
+        let mut found_light = None;
+
+        // Iterate frames to find the one with correct side index
+        for (frame, children) in &frame_query {
+            if frame.door_index == game_state.pyramid_target_door_index {
+                // Check children for HoleLight
+                for child in children {
+                    if light_query.get(*child).is_ok() {
+                        found_light = Some(*child);
+                        break;
+                    }
+                }
+            }
+            if found_light.is_some() { break; }
+        }
+
+        if let Some(light_entity) = found_light {
+            // Start Animation
+            game_state.is_animating = true;
+            game_state.animating_door = Some(winning_door.unwrap());
+            game_state.animating_light = Some(light_entity);
+            game_state.animation_start_time = Some(time.elapsed());
+        }
+        
+        
     }
 }
 
 /// Input handling for Won Phase
-pub fn handle_won_input(
+pub fn won_inputs(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GamePhase>>,
 ) {
@@ -310,6 +272,7 @@ pub fn handle_door_animation(
     door_query: Query<&MeshMaterial3d<StandardMaterial>, With<BaseDoor>>,
     mut next_state: ResMut<NextState<GamePhase>>,
 ) {
+    // If not animating, exit
     if !game_state.is_animating {
         return;
     }

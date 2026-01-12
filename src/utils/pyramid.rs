@@ -2,7 +2,7 @@
 
 use crate::utils::constants::{object_constants::GROUND_Y, pyramid_constants::*};
 use crate::utils::objects::{
-    Decoration, DecorationSet, DecorationShape, FaceMarker, GameEntity, GameState, Pyramid,
+    Decoration, DecorationSet, DecorationShape, GameEntity, GameState, Pyramid,
     PyramidType, RandomGen, RotableComponent, BaseFrame, BaseDoor, HoleLight,
 };
 use bevy::prelude::*;
@@ -16,17 +16,15 @@ pub fn spawn_pyramid_base(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    game_state: &GameState,
+    game_state: &mut GameState,
 ) {
-    let base_radius = game_state.pyramid_base_radius;
+    let base_radius = BASE_RADIUS;
     let angle_increment = std::f32::consts::TAU / BASE_NR_SIDES as f32;
-    
-    // Calculate which base sides align with pyramid corners
-    let sides_per_corner = BASE_NR_SIDES / 3;
+
     
     for i in 0..BASE_NR_SIDES {
-        let angle1 = i as f32 * angle_increment + game_state.pyramid_start_orientation_rad;
-        let angle2 = (i + 1) as f32 * angle_increment + game_state.pyramid_start_orientation_rad;
+        let angle1 = i as f32 * angle_increment + game_state.pyramid_start_orientation_rad + std::f32::consts::PI / 2.0;
+        let angle2 = (i + 1) as f32 * angle_increment + game_state.pyramid_start_orientation_rad + std::f32::consts::PI / 2.0;
         
         // Calculate the four corners of the rectangular side
         let bottom_outer_1 = Vec3::new(
@@ -78,27 +76,25 @@ pub fn spawn_pyramid_base(
                     ..default()
                 })),
                 Transform::default(),
-                BaseFrame { side_index: i },
+                BaseFrame {door_index: i },
                 GameEntity,
                 RotableComponent
             ))
             .with_children(|parent| {
                 parent.spawn((
-                    PointLight {
+                    SpotLight {
                         intensity: 1_000_000.0,
                         shadows_enabled: true,
+                        outer_angle: std::f32::consts::PI / 6.0,
                         ..default()
                     },
-                    Transform::from_translation(light_pos),
+                    Transform::from_translation(light_pos).looking_at(light_pos + -normal, Vec3::Y),
                     GameEntity,
                     // Initially hidden
                     HoleLight,
                     Visibility::Hidden,
                 ));
             });
-        
-        // Determine which pyramid face this side aligns with
-        let face_index = i / sides_per_corner;
         
         // Create and spawn the door (pentagon) that covers the hole
         let door_mesh = create_pentagon_door(
@@ -111,10 +107,8 @@ pub fn spawn_pyramid_base(
         
         // Door color: slightly darker brown with a visible border effect
         // Alpha mode Blend to allow transparency changes
-        let door_color = Color::srgba(0.49, 0.24, 0.00, 1.0);
+        let door_color = Color::srgba(0.49, 0.24, 0.00, 0.0);
         
-        let is_center = (i % sides_per_corner) == (sides_per_corner / 2);
-
         // Spawn the door entity
         commands.spawn((
             Mesh3d(meshes.add(door_mesh)),
@@ -127,10 +121,9 @@ pub fn spawn_pyramid_base(
             })),
             Transform::default(),
             BaseDoor {
-                side_index: i,
-                face_index: face_index.min(2), // Clamp to 0-2
+                door_index: i,
+                normal: normal,
                 is_open: false,
-                is_center_door: is_center,
             },
             GameEntity,
             RotableComponent,
@@ -138,7 +131,7 @@ pub fn spawn_pyramid_base(
         
     }
 
-    // Spawn The top lid of the base
+    // Spawn the top lid of the base
     let top_y = GROUND_Y + BASE_HEIGHT;
     
     // Create a polygon mesh matching the base's shape
@@ -179,7 +172,7 @@ fn create_top_lid_mesh(radius: f32, sides: usize, start_orientation: f32) -> Mes
     
     // Create vertices around the perimeter
     for i in 0..sides {
-        let angle = i as f32 * angle_increment + start_orientation;
+        let angle = i as f32 * angle_increment + start_orientation + std::f32::consts::PI / 2.0;
         let x = radius * angle.cos();
         let z = radius * angle.sin();
         
@@ -476,16 +469,6 @@ pub fn spawn_pyramid(
                 Transform::default(),
                 Pyramid,
                 RotableComponent, // Make it rotatable by camera controls
-                FaceMarker {
-                    face_index: i,
-                    color: game_state.pyramid_color_faces[i],
-                    normal: if game_state.pyramid_type == PyramidType::Type1 {
-                        normal
-                    } else {
-                        -normal
-                    },
-                    decorations: decoration_sets[i].clone(),
-                },
                 GameEntity,
             ))
             .id();

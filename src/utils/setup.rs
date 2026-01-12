@@ -57,7 +57,7 @@ pub fn setup(
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.2, 0.2, 0.2),
             perceptual_roughness: 0.2,
-            reflectance: 0.9,
+            reflectance: 1.0,
             cull_mode: None,
             ..default()
         })),
@@ -103,7 +103,7 @@ pub fn setup(
 }
 
 
-// Despawn all entities, needed when transitioninf from Playing to MenuUI
+// Despawn all entities, needed when transitioning from Playing to MenuUI
 pub fn despawn_setup(
     mut commands: Commands,
     query: Query<Entity, With<GameEntity>>,
@@ -139,18 +139,18 @@ pub fn setup_game_state(
     let pyramid_start_orientation_rad = random_gen
         .random_gen
         .random_range(PYRAMID_ANGLE_OFFSET_RAD_MIN..PYRAMID_ANGLE_OFFSET_RAD_MAX);
-    let pyramid_target_face_index = 0;
-
-    let mut pyramid_colors = PYRAMID_COLORS;
 
     // If the pyramid is of Type2, make two of its sides the same color
+    // and set the door index to opposite direction of red side (counterclockwise)
+    let mut pyramid_colors = PYRAMID_COLORS;
+    let mut pyramid_target_door_index = 5;
     if pyramid_type == PyramidType::Type2 {
-        if random_gen.random_gen.next_u64() % 2 == 0 {
-            pyramid_colors[1] = pyramid_colors[2];
-        } else {
-            pyramid_colors[2] = pyramid_colors[1];
-        }
+        pyramid_colors[2] = pyramid_colors[1];
+        
+        pyramid_target_door_index = 2;
     }
+
+    // Depending on the type of the pyramid select the target door index to check face alignment with
 
     // Create the initial game state
     let game_state = GameState {
@@ -158,10 +158,11 @@ pub fn setup_game_state(
         pyramid_type: pyramid_type,
         pyramid_base_radius: pyramid_base_radius,
         pyramid_height: pyramid_height,
-        pyramid_target_face_index: pyramid_target_face_index as usize,
         pyramid_start_orientation_rad: pyramid_start_orientation_rad,
+        
         pyramid_color_faces: pyramid_colors,
 
+        pyramid_target_door_index: pyramid_target_door_index, 
         start_time: Some(time.elapsed()),
         end_time: None,
 
@@ -182,6 +183,8 @@ pub fn setup_game_state(
     return cloned_game_state;
 }
 
+
+/// Spawn a semicircle around the pyramid object for reflections and hints to user.
 fn create_semicircle_mesh(radius: f32, height: f32, segments: u32) -> Mesh {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
@@ -201,7 +204,7 @@ fn create_semicircle_mesh(radius: f32, height: f32, segments: u32) -> Mesh {
         let z = -radius * angle.sin();
 
         // Normal points outwards (to center)
-        let normal = Vec3::new(x, 0.0, z).normalize();
+        let normal = -Vec3::new(x, 0.0, z).normalize();
 
         // Bottom vertex
         positions.push([x, 0.0, z]);

@@ -1,4 +1,4 @@
-//! Input handling for the game, specifically for toggling display and cursor modes.
+//! Input handling for the game, spcifically always on inputs.
 use bevy::prelude::*;
 
 use bevy::window::{

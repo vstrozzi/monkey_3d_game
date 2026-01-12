@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use crate::utils::game_functions::{
-    despawn_ui, menu_inputs, playing_inputs, handle_won_input,
+    despawn_ui, menu_inputs, playing_inputs, won_inputs,
     setup_intro_ui, setup_playing_ui, setup_won_ui, handle_door_animation
 };
 use crate::utils::objects::{GamePhase, GameState};
@@ -31,11 +31,11 @@ impl Plugin for SystemsLogicPlugin {
             .add_systems(
                 Update,
                 (
-                    // Group A: only in Playing AND not animating
+                    // Allow inputs only if not animating
                     (playing_inputs, camera_3d_fpov_inputs)
                         .run_if(in_state(GamePhase::Playing).and(is_animating)),
 
-                    // Group B: only in Playing
+                    // All the other systems can keep playing while we animate
                     (handle_door_animation)
                         .run_if(in_state(GamePhase::Playing)),
                 ),
@@ -47,7 +47,7 @@ impl Plugin for SystemsLogicPlugin {
             .add_systems(OnEnter(GamePhase::Won), setup_won_ui)
             .add_systems(
                 Update,
-                handle_won_input.run_if(in_state(GamePhase::Won)),
+                won_inputs.run_if(in_state(GamePhase::Won)),
             )
             .add_systems(OnExit(GamePhase::Won), despawn_ui);
     }
