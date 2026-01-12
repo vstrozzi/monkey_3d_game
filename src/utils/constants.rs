@@ -58,7 +58,7 @@ pub mod pyramid_constants {
     pub const BASE_RADIUS: f32 = PYRAMID_BASE_RADIUS_MAX * 2.0;
     pub const BASE_COLOR: Color = Color::srgb(0.59, 0.29, 0.00); // brown
     pub const BASE_NR_SIDES: usize = 6; // multiple of 3
-    pub const BASE_HOLES_LIGHT_Y_OFFSET: f32 = 0.00; // Y offset of the light holes from the Y of the holes itself
+    pub const BASE_HOLES_LIGHT_Y_OFFSET: f32 = 0.0; // Y offset of the light holes from the Y of the holes itself
     pub const BASE_HOLES_LIGHT_OFFSET_CENTER: f32 = -0.4; // Offset of the light holes from the normal of center of the hole
 
 

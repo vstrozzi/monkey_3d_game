@@ -31,7 +31,7 @@ fn toggle_vsync(
 /// Visualizes lights when the 'L' key is pressed.
 fn visualize_lights(
     mut gizmos: Gizmos,
-    query: Query<(&GlobalTransform, &PointLight)>,
+    query: Query<(&GlobalTransform, &SpotLight)>,
     input: Res<ButtonInput<KeyCode>>,
     mut show_lights: Local<bool>,
 ) {

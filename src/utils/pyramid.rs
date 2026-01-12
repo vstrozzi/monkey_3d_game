@@ -65,6 +65,9 @@ pub fn spawn_pyramid_base(
         let center = (bottom_outer_1 + bottom_outer_2 + top_outer_1 + top_outer_2) / 4.0;
         let light_pos = center - normal * BASE_HOLES_LIGHT_OFFSET_CENTER + Vec3::Y * BASE_HOLES_LIGHT_Y_OFFSET ;
 
+
+        let right = normal.cross(Vec3::Y).normalize();  // Perpendicular to both normal and Y
+        let up = right.cross(normal).normalize();       // Perpendicular to both right and look direction
         // Spawn the base frame and a light in front to have a nice effect
         commands
             .spawn((
@@ -83,12 +86,12 @@ pub fn spawn_pyramid_base(
             .with_children(|parent| {
                 parent.spawn((
                     SpotLight {
-                        intensity: 1_000_000.0,
+                        intensity: 2_000_000.0,
                         shadows_enabled: true,
                         outer_angle: std::f32::consts::PI / 6.0,
                         ..default()
                     },
-                    Transform::from_translation(light_pos).looking_at(light_pos + -normal, Vec3::Y),
+                    Transform::from_translation(light_pos).looking_at(light_pos - normal, up),
                     GameEntity,
                     // Initially hidden
                     HoleLight,
@@ -102,7 +105,6 @@ pub fn spawn_pyramid_base(
             bottom_outer_2,
             top_outer_1,
             top_outer_2,
-            normal,
         );
         
         // Door color: slightly darker brown with a visible border effect
@@ -302,7 +304,6 @@ fn create_pentagon_door(
     bottom_right: Vec3,
     top_left: Vec3,
     top_right: Vec3,
-    normal: Vec3,
 ) -> Mesh {
     let mut mesh = Mesh::new(
         bevy::mesh::PrimitiveTopology::TriangleList,
@@ -316,14 +317,19 @@ fn create_pentagon_door(
     let width = bottom_left.distance(bottom_right);
     let height = bottom_left.distance(top_left);
     
+    // Calculate the normal (same as create_frame_with_hole for consistency)
+    let side_vec = bottom_right - bottom_left;
+    let up_vec = top_left - bottom_left;
+    let normal = side_vec.cross(up_vec).normalize();
+    
     // Pentagon parameters (matching the hole)
     let hole_scale = 0.4;
     let pentagon_radius = (width.min(height) * hole_scale) / 2.0;
     
     // Slightly offset the door forward to prevent z-fighting
-    let door_center = center - normal * 0.0001;
+    let door_center = center + normal * 0.001;
     
-    // Local coordinate system
+    // Local coordinate system (same as create_frame_with_hole)
     let local_right = (bottom_right - bottom_left).normalize();
     let local_up = (top_left - bottom_left).normalize();
     
@@ -527,9 +533,9 @@ fn generate_decoration_set(
 
     // Choose a random vibrant color, which will be the same for all decorations on this face.
     let color = Color::srgb(
-        rng.random_range(0.2..1.0),
-        rng.random_range(0.2..1.0),
-        rng.random_range(0.2..1.0),
+        rng.random_range(0.2..0.22),
+        rng.random_range(0.2..0.22),
+        rng.random_range(0.2..0.22),
     );
 
     while successful_placements < decoration_count
@@ -619,6 +625,7 @@ fn spawn_decorations_from_set(
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(materials.add(StandardMaterial {
                     base_color: decoration_set.color,
+                    reflectance: 0.0,
                     ..default()
                 })),
                 Transform {
@@ -724,7 +731,7 @@ fn create_star_mesh(size: f32, points: usize) -> Mesh {
 
     // Add the center point of the star
     positions.push([0.0, 0.0, 0.0]);
-    normals.push([0.0, -1.0, 0.0]);
+    normals.push([0.0, 0.0, 1.0]);
     uvs.push([0.5, 0.5]);
 
     // Create the points of the star
@@ -736,7 +743,7 @@ fn create_star_mesh(size: f32, points: usize) -> Mesh {
         let y = angle.sin() * radius;
 
         positions.push([x, y, 0.0]);
-        normals.push([0.0, -1.0, 0.0]);
+        normals.push([0.0, 0.0, 1.0]);
         uvs.push([x / size * 0.5 + 0.5, y / size * 0.5 + 0.5]);
     }
 
@@ -768,7 +775,7 @@ fn create_triangle_mesh(size: f32) -> Mesh {
         [size, -height * 0.333, 0.0],
     ];
 
-    let normals = vec![[0.0, -1.0, 0.0]; 3];
+    let normals = vec![[0.0, 0.0, 1.0]; 3];
     let uvs = vec![[0.5, 1.0], [0.0, 0.0], [1.0, 0.0]];
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);

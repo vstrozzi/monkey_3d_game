@@ -67,23 +67,26 @@ pub fn setup(
         GameEntity,
     ));
 
-    // Game light
-/*     commands.spawn((
-        PointLight {
-            intensity: 2_000_000.0,
+    // Game light - PointLight positioned high to provide more uniform lighting
+    commands.spawn((
+        SpotLight {
+            intensity: 4_000_000.0,
             shadows_enabled: true,
+            outer_angle: std::f32::consts::PI / 3.0,
+            range: 15.0, // Increased range since light is higher
+            radius: 0.0,
             ..default()
         },
-        Transform::from_xyz(0.0, 3.0, 4.0),
+        Transform::from_xyz(0.0, 9.0, 0.0).looking_at(Vec3::ZERO, -Vec3::Y), // Higher position for more uniform lighting
         GameEntity,
-    )); */
+    ));
 
 
 
     // Ambient light
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: 50.0,
+        brightness: 200.0,
         affects_lightmapped_meshes: true,
     });
 
