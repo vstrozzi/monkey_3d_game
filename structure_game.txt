@@ -1,3 +1,6 @@
-# Add a bar that lights up based on the cosine similarity of the last guess
 
 # Add borders to the pyramid li
+
+# Remove the text on the setup_ui 
+
+# ake the game a state machine to interact with i.e. send object and get back state

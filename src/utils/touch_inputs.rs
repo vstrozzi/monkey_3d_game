@@ -9,8 +9,8 @@ use crate::utils::constants::camera_3d_constants::{
 };
 use crate::utils::constants::touch_constants::{
     MAX_VELOCITY, MIN_VELOCITY_THRESHOLD, PINCH_SENSITIVITY, RUBBER_BAND_MAX_OVERSHOOT,
-    RUBBER_BAND_SNAP_SPEED, RUBBER_BAND_STRENGTH, SWIPE_SENSITIVITY_X, SWIPE_SENSITIVITY_Y,
-    TAP_MAX_DISTANCE, TAP_MAX_DURATION_SECS, VELOCITY_DECAY,
+    RUBBER_BAND_SNAP_SPEED, RUBBER_BAND_STRENGTH, SWIPE_SENSITIVITY_X, TAP_MAX_DISTANCE,
+    TAP_MAX_DURATION_SECS, VELOCITY_DECAY,
 };
 use crate::utils::objects::RotableComponent;
 
@@ -19,9 +19,8 @@ use crate::utils::objects::RotableComponent;
 pub enum GestureMode {
     #[default]
     None,
-    Horizontal, // Rotation
-    Vertical,   // Zoom (single finger)
-    Pinch,      // Zoom (two fingers)
+    Swipe, // Single finger swipe (rotation)
+    Pinch, // Two finger pinch (zoom)
 }
 
 /// Resource to track touch state for gesture recognition with momentum
@@ -174,12 +173,8 @@ pub fn track_touch_gestures(
                     if touch_state.gesture_mode == GestureMode::None
                         && touch_state.second_touch_id.is_none()
                     {
-                        let total_delta = new_position - start;
-                        if total_delta.x.abs() > total_delta.y.abs() {
-                            touch_state.gesture_mode = GestureMode::Horizontal;
-                        } else {
-                            touch_state.gesture_mode = GestureMode::Vertical;
-                        }
+                        // Single finger is always swipe for rotation
+                        touch_state.gesture_mode = GestureMode::Swipe;
                     }
                 }
             }
@@ -254,12 +249,11 @@ pub fn track_touch_gestures(
     }
 }
 
-/// System to process single-finger touch swipes for camera rotation and zoom
+/// System to process single-finger touch swipes for camera rotation
 pub fn process_touch_swipe(
     touches: Res<Touches>,
-    mut touch_state: ResMut<TouchState>,
+    touch_state: Res<TouchState>,
     timer: Res<Time>,
-    mut camera_query: Query<&mut Transform, With<Camera3d>>,
     mut rot_entities: Query<&mut Transform, (With<RotableComponent>, Without<Camera3d>)>,
     gamestate: Res<crate::utils::objects::GameState>,
 ) {
@@ -283,28 +277,16 @@ pub fn process_touch_swipe(
                 continue;
             }
 
-            match touch_state.gesture_mode {
-                GestureMode::Horizontal => {
-                    // Rotate objects based on horizontal swipe
-                    let rotation_speed = CAMERA_3D_SPEED_X * timer.delta_secs();
-                    let rotation_amount = delta.x * SWIPE_SENSITIVITY_X * rotation_speed * 10.0;
+            if touch_state.gesture_mode == GestureMode::Swipe {
+                // Rotate objects based on horizontal swipe
+                let rotation_speed = CAMERA_3D_SPEED_X * timer.delta_secs();
+                let rotation_amount = delta.x * SWIPE_SENSITIVITY_X * rotation_speed * 10.0;
 
-                    for mut rot_entity_transform in &mut rot_entities {
-                        let (mut yaw, _, _) = rot_entity_transform.rotation.to_euler(EulerRot::YXZ);
-                        yaw += rotation_amount;
-                        rot_entity_transform.rotation = Quat::from_rotation_y(yaw);
-                    }
+                for mut rot_entity_transform in &mut rot_entities {
+                    let (mut yaw, _, _) = rot_entity_transform.rotation.to_euler(EulerRot::YXZ);
+                    yaw += rotation_amount;
+                    rot_entity_transform.rotation = Quat::from_rotation_y(yaw);
                 }
-                GestureMode::Vertical => {
-                    // Zoom with vertical swipe
-                    apply_zoom_delta(
-                        delta.y * SWIPE_SENSITIVITY_Y,
-                        &timer,
-                        &mut camera_query,
-                        &mut touch_state,
-                    );
-                }
-                _ => {}
             }
         }
     }
@@ -399,7 +381,6 @@ fn apply_zoom_delta(
 pub fn apply_touch_momentum(
     mut touch_state: ResMut<TouchState>,
     timer: Res<Time>,
-    mut camera_query: Query<&mut Transform, With<Camera3d>>,
     mut rot_entities: Query<&mut Transform, (With<RotableComponent>, Without<Camera3d>)>,
     gamestate: Res<crate::utils::objects::GameState>,
 ) {
@@ -440,25 +421,7 @@ pub fn apply_touch_momentum(
         }
     }
 
-    // Apply zoom momentum (vertical velocity) - gentler than rotation
-    if velocity.y.abs() > MIN_VELOCITY_THRESHOLD {
-        let Ok(mut transform) = camera_query.single_mut() else {
-            return;
-        };
-
-        let zoom_speed = CAMERA_3D_SPEED_Z * dt;
-        let (yaw, _, _) = transform.rotation.to_euler(EulerRot::YXZ);
-        let mut radius = transform.translation.xz().length();
-
-        // Apply gentler zoom momentum
-        radius += velocity.y * SWIPE_SENSITIVITY_Y * zoom_speed * 0.3;
-
-        // Hard clamp during momentum (no rubber band when not touching)
-        radius = radius.clamp(CAMERA_3D_MIN_RADIUS, CAMERA_3D_MAX_RADIUS);
-
-        transform.translation = Vec3::new(radius * yaw.sin(), CAMERA_3D_INITIAL_Y, radius * yaw.cos());
-        transform.look_at(Vec3::ZERO, Vec3::Y);
-    }
+    // Note: Zoom momentum removed - zoom is pinch-only
 }
 
 /// System to apply rubber-band snap-back effect when zoom exceeds limits
