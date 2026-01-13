@@ -9,7 +9,7 @@ pub mod touch_constants {
     // Swipe sensitivity (adjustable for user preference)
     pub const SWIPE_SENSITIVITY_X: f32 = 0.008;    // Horizontal swipe for rotation
     pub const SWIPE_SENSITIVITY_Y: f32 = 0.025;    // Vertical swipe for zoom
-    pub const PINCH_SENSITIVITY: f32 = 0.015;      // Pinch-to-zoom sensitivity
+    pub const PINCH_SENSITIVITY: f32 = 1.5;        // Pinch-to-zoom sensitivity (increased from 0.015)
     
     // Momentum/inertia settings for natural scrolling feel
     pub const VELOCITY_DECAY: f32 = 0.92;          // Per-frame velocity decay (0.9-0.95 feels natural)
