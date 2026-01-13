@@ -2,8 +2,9 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="mobile-web-app-capable" content="yes" />
         <title>My Rust Game</title>
         <style>
@@ -16,6 +17,17 @@
                 overflow: hidden;
                 /* Prevent pull-to-refresh and other touch gestures */
                 overscroll-behavior: none;
+                /* Prevent iOS bounce scrolling */
+                position: fixed;
+                top: 0;
+                left: 0;
+                /* Prevent text selection on touch */
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+                /* Prevent touch callouts (long press menus) */
+                -webkit-touch-callout: none;
             }
             canvas {
                 margin: 0;
@@ -25,6 +37,8 @@
                 display: block;
                 /* Critical: Prevent browser from handling touch events */
                 touch-action: none;
+                /* Prevent iOS tap highlight */
+                -webkit-tap-highlight-color: transparent;
             }
         </style>
     </head>
@@ -32,29 +46,64 @@
         <script type="module">
             import init from "./out/monkey_3d_game.js";
             
-            // Prevent default touch behaviors on the entire document
-            document.addEventListener('touchstart', function(e) {
-                if (e.target.tagName === 'CANVAS') {
-                    e.preventDefault();
-                }
-            }, { passive: false });
+            // Comprehensive touch event prevention for natural game feel
+            const preventDefaultHandler = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            };
             
-            document.addEventListener('touchmove', function(e) {
-                if (e.target.tagName === 'CANVAS') {
-                    e.preventDefault();
-                }
-            }, { passive: false });
+            // Prevent all touch events on canvas and document
+            const touchEvents = ['touchstart', 'touchmove', 'touchend', 'touchcancel'];
+            touchEvents.forEach(eventType => {
+                document.addEventListener(eventType, function(e) {
+                    // Always prevent on canvas
+                    if (e.target.tagName === 'CANVAS') {
+                        e.preventDefault();
+                    }
+                }, { passive: false, capture: true });
+            });
             
+            // Prevent Safari-specific gesture events (pinch-to-zoom, rotate)
+            document.addEventListener('gesturestart', preventDefaultHandler, { passive: false });
+            document.addEventListener('gesturechange', preventDefaultHandler, { passive: false });
+            document.addEventListener('gestureend', preventDefaultHandler, { passive: false });
+            
+            // Prevent double-tap zoom on iOS
+            let lastTouchEnd = 0;
             document.addEventListener('touchend', function(e) {
-                if (e.target.tagName === 'CANVAS') {
+                const now = Date.now();
+                if (now - lastTouchEnd <= 300) {
                     e.preventDefault();
                 }
+                lastTouchEnd = now;
             }, { passive: false });
             
             // Prevent context menu on long press
-            document.addEventListener('contextmenu', function(e) {
-                e.preventDefault();
+            document.addEventListener('contextmenu', preventDefaultHandler, { passive: false });
+            
+            // Prevent wheel events (pinch-to-zoom on trackpad)
+            document.addEventListener('wheel', function(e) {
+                if (e.ctrlKey || e.target.tagName === 'CANVAS') {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+            
+            // Prevent keyboard zoom (Ctrl/Cmd + Plus/Minus)
+            document.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=')) {
+                    e.preventDefault();
+                }
             });
+            
+            // Force touch handling for 3D Touch devices (optional: can use for future features)
+            if ('ontouchforcechange' in document) {
+                document.addEventListener('touchforcechange', function(e) {
+                    if (e.target.tagName === 'CANVAS') {
+                        e.preventDefault();
+                    }
+                }, { passive: false });
+            }
             
             init();
         </script>

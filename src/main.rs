@@ -22,7 +22,7 @@ fn main() {
     let window = Some(Window {
         title: "Monkey 3D Game".into(),
         fit_canvas_to_parent: true,            // Wasm size as canvas
-        prevent_default_event_handling: false, // Wasm not override default (F5, ...)
+        prevent_default_event_handling: true,  // Prevent browser from intercepting touch/scroll
         #[cfg(not(target_arch = "wasm32"))]
         mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary), // Native fullscreen
         present_mode: PresentMode::AutoVsync,

@@ -1,5 +1,27 @@
 // Constants used in the game, structured into modules.
 
+/// Touch input constants for natural iOS-like feel
+pub mod touch_constants {
+    // Gesture detection thresholds
+    pub const TAP_MAX_DURATION_SECS: f32 = 0.3;   // Maximum duration for a tap
+    pub const TAP_MAX_DISTANCE: f32 = 20.0;        // Maximum movement for a tap (pixels)
+    
+    // Swipe sensitivity (adjustable for user preference)
+    pub const SWIPE_SENSITIVITY_X: f32 = 0.008;    // Horizontal swipe for rotation
+    pub const SWIPE_SENSITIVITY_Y: f32 = 0.025;    // Vertical swipe for zoom
+    pub const PINCH_SENSITIVITY: f32 = 0.015;      // Pinch-to-zoom sensitivity
+    
+    // Momentum/inertia settings for natural scrolling feel
+    pub const VELOCITY_DECAY: f32 = 0.92;          // Per-frame velocity decay (0.9-0.95 feels natural)
+    pub const MIN_VELOCITY_THRESHOLD: f32 = 0.5;   // Stop momentum below this velocity
+    pub const MAX_VELOCITY: f32 = 50.0;            // Cap velocity to prevent wild spinning
+    
+    // Rubber-band effect at zoom limits
+    pub const RUBBER_BAND_STRENGTH: f32 = 0.3;     // Resistance when exceeding limits (0-1)
+    pub const RUBBER_BAND_SNAP_SPEED: f32 = 8.0;   // Speed of snapping back to valid range
+    pub const RUBBER_BAND_MAX_OVERSHOOT: f32 = 2.0; // Maximum allowed overshoot distance
+}
+
 /// 3D camera
 pub mod camera_3d_constants {
     pub const CAMERA_3D_INITIAL_X: f32 = 0.0;
