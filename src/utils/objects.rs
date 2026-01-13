@@ -10,8 +10,10 @@ use rand_chacha::ChaCha8Rng;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, States, Hash)]
 pub enum GamePhase {
     #[default]
-    // The game has not started yet
+    // Initial menu screen
     MenuUI,
+    // Loading screen after pressing start (scene setup + GPU stabilization)
+    Loading,
     // The game is currently being played
     Playing,
     // The game has been won
@@ -161,3 +163,9 @@ pub struct ScoreBarUI;
 // Component marking the fill bar inside the ScoreBarUI
 #[derive(Component)]
 pub struct ScoreBarFill;
+
+/// Resource to track loading state timing
+#[derive(Resource, Default)]
+pub struct LoadingState {
+    pub load_start_time: Option<Duration>,
+}

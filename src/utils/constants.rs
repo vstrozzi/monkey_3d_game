@@ -87,6 +87,9 @@ pub mod game_constants {
     pub const SCORE_BAR_HEIGHT: f32 = 20.0; // pixels (scaled by UiScale)
     pub const SCORE_BAR_TOP_OFFSET: f32 = 50.0; // pixels from top (scaled by UiScale)
     pub const SCORE_BAR_BORDER_THICKNESS: f32 = 2.0; // pixels (scaled by UiScale)
+
+    // Loading screen duration in seconds (time for scene to render/stabilize)
+    pub const LOADING_DURATION_SECS: f32 = 0.3;
 }
 
 /// Lighting constants

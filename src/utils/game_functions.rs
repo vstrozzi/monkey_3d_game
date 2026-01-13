@@ -4,13 +4,13 @@ use bevy::prelude::*;
 use crate::utils::touch_inputs::TouchTapEvent;
 use crate::utils::constants::game_constants::{
     COSINE_ALIGNMENT_CAMERA_FACE_THRESHOLD, DOOR_ANIMATION_FADE_IN_DURATION,
-    DOOR_ANIMATION_FADE_OUT_DURATION, DOOR_ANIMATION_STAY_OPEN_DURATION,
+    DOOR_ANIMATION_FADE_OUT_DURATION, DOOR_ANIMATION_STAY_OPEN_DURATION, LOADING_DURATION_SECS,
     SCORE_BAR_BORDER_THICKNESS, SCORE_BAR_HEIGHT, SCORE_BAR_TOP_OFFSET, SCORE_BAR_WIDTH_PERCENT,
 };
 use crate::utils::constants::lighting_constants::MAX_SPOTLIGHT_INTENSITY;
 use crate::utils::objects::{
-    BaseDoor, BaseFrame, GameEntity, GamePhase, GameState, HoleEmissive, HoleLight, ScoreBarFill,
-    ScoreBarUI, UIEntity,
+    BaseDoor, BaseFrame, GameEntity, GamePhase, GameState, HoleEmissive, HoleLight, LoadingState,
+    ScoreBarFill, ScoreBarUI, UIEntity,
 };
 
 /// Helper to despawn ui entities given a mutable commands reference
@@ -45,14 +45,48 @@ pub fn menu_inputs(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GamePhase>>,
     mut game_state: ResMut<GameState>,
+    mut loading_state: ResMut<LoadingState>,
     time: Res<Time>,
     mut tap_events: MessageReader<TouchTapEvent>,
 ) {
     let tap_detected = tap_events.read().next().is_some();
     if keyboard.just_pressed(KeyCode::Space) || tap_detected {
-        game_state.start_time = Some(time.elapsed());
+        // Record when loading starts, actual game start time will be set after loading
+        loading_state.load_start_time = Some(time.elapsed());
         game_state.nr_attempts = 0;
-        next_state.set(GamePhase::Playing);
+        next_state.set(GamePhase::Loading);
+    }
+}
+
+/// Setup black screen for Loading state
+pub fn setup_loading_ui(mut commands: Commands) {
+    commands.spawn((Camera2d::default(), UIEntity));
+    // Spawn a full-screen black overlay
+    commands.spawn((
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            ..default()
+        },
+        BackgroundColor(Color::BLACK),
+        UIEntity,
+    ));
+}
+
+/// Check if loading is complete and transition to Playing
+pub fn check_loading_complete(
+    time: Res<Time>,
+    loading_state: Res<LoadingState>,
+    mut game_state: ResMut<GameState>,
+    mut next_state: ResMut<NextState<GamePhase>>,
+) {
+    if let Some(start) = loading_state.load_start_time {
+        let elapsed = time.elapsed().as_secs_f32() - start.as_secs_f32();
+        if elapsed >= LOADING_DURATION_SECS {
+            // Set actual game start time now that we're ready to play
+            game_state.start_time = Some(time.elapsed());
+            next_state.set(GamePhase::Playing);
+        }
     }
 }
 
@@ -192,7 +226,7 @@ pub fn won_inputs(
 ) {
     let tap_detected = tap_events.read().next().is_some();
     if keyboard.just_pressed(KeyCode::KeyR) || tap_detected {
-        next_state.set(GamePhase::MenuUI);
+        next_state.set(GamePhase::MenuUI); // Go back to menu, then Loading on next start
     }
 }
 

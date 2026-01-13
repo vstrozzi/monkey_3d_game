@@ -2,10 +2,11 @@
 
 use crate::utils::camera::camera_3d_fpov_inputs;
 use crate::utils::game_functions::{
-    despawn_ui, handle_door_animation, menu_inputs, playing_inputs, setup_intro_ui,
-    setup_playing_ui, setup_won_ui, update_score_bar_animation, update_ui_scale, won_inputs,
+    check_loading_complete, despawn_ui, handle_door_animation, menu_inputs, playing_inputs,
+    setup_intro_ui, setup_loading_ui, setup_playing_ui, setup_won_ui, update_score_bar_animation,
+    update_ui_scale, won_inputs,
 };
-use crate::utils::objects::{GamePhase, GameState};
+use crate::utils::objects::{GamePhase, GameState, LoadingState};
 use crate::utils::setup::{despawn_setup, setup};
 use bevy::prelude::*;
 
@@ -16,17 +17,25 @@ impl Plugin for SystemsLogicPlugin {
     /// Builds the plugin by adding the systems to the app.
     fn build(&self, app: &mut App) {
         app.init_state::<GamePhase>()
+            .init_resource::<LoadingState>()
             // Global UI responsiveness system (runs every frame)
             .add_systems(Update, update_ui_scale)
-            // Intro State
+            // Intro State (Menu)
             .add_systems(OnEnter(GamePhase::MenuUI), setup_intro_ui)
             .add_systems(Update, menu_inputs.run_if(in_state(GamePhase::MenuUI)))
             .add_systems(OnExit(GamePhase::MenuUI), despawn_ui)
-            // Playing State
+            // Loading State (black screen while scene loads)
             .add_systems(
-                OnEnter(GamePhase::Playing),
-                (setup, setup_playing_ui).chain(),
+                OnEnter(GamePhase::Loading),
+                (setup, setup_loading_ui).chain(),
             )
+            .add_systems(
+                Update,
+                check_loading_complete.run_if(in_state(GamePhase::Loading)),
+            )
+            .add_systems(OnExit(GamePhase::Loading), despawn_ui)
+            // Playing State
+            .add_systems(OnEnter(GamePhase::Playing), setup_playing_ui)
             .add_systems(
                 Update,
                 (
