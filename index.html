@@ -2,22 +2,60 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <title>My Rust Game</title>
         <style>
             html,
-            body,
+            body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                /* Prevent pull-to-refresh and other touch gestures */
+                overscroll-behavior: none;
+            }
             canvas {
                 margin: 0;
                 padding: 0;
                 width: 100%;
                 height: 100%;
                 display: block;
+                /* Critical: Prevent browser from handling touch events */
+                touch-action: none;
             }
         </style>
     </head>
     <body>
         <script type="module">
             import init from "./out/monkey_3d_game.js";
+            
+            // Prevent default touch behaviors on the entire document
+            document.addEventListener('touchstart', function(e) {
+                if (e.target.tagName === 'CANVAS') {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+            
+            document.addEventListener('touchmove', function(e) {
+                if (e.target.tagName === 'CANVAS') {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+            
+            document.addEventListener('touchend', function(e) {
+                if (e.target.tagName === 'CANVAS') {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+            
+            // Prevent context menu on long press
+            document.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+            });
+            
             init();
         </script>
     </body>
