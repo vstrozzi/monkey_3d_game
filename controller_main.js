@@ -22,43 +22,37 @@ let inputs = {
   resumeRendering: 0,
 };
 
-// Touch state tracking - with momentum for smooth continuous input
+// Touch state - virtual button system (instant like keyboard)
 let touchState = {
-  // Gesture type lock - once detected, stick with it until touch ends
-  gestureType: null, // null, 'swipe', 'pinch', 'tap'
+  // Single finger touch (for rotation)
+  singleTouch: {
+    active: false,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+    startTime: 0,
+    identifier: null,
+  },
 
-  // Single touch tracking
-  startX: 0,
-  startY: 0,
-  lastX: 0,
-  lastY: 0,
-  startTime: 0,
-  isDown: false, // Track if finger is currently down
+  // Two finger touch (for zoom)
+  twoFingerTouch: {
+    active: false,
+    initialDistance: 0,
+    currentDistance: 0,
+  },
 
-  // Pinch tracking
-  lastPinchDistance: 0,
-  pinchCenter: { x: 0, y: 0 },
-
-  // Output states (directly drive game inputs)
+  // Output states - directly mapped like button presses
   rotateLeft: false,
   rotateRight: false,
   zoomIn: false,
   zoomOut: false,
 
-  // Momentum tracking - keep action going briefly after movement stops
-  lastRotateDirection: 0, // -1 left, 0 none, 1 right
-  lastZoomDirection: 0, // -1 out, 0 none, 1 in
-  lastActionTime: 0, // timestamp of last detected movement
-  momentumDuration: 150, // ms to keep action after movement stops
-
-  // Tuning parameters
-  swipeMinDistance: 5, // pixels to start recognizing swipe (reduced)
-  swipeSensitivity: 2, // pixels of movement per frame to trigger rotation (reduced)
-  pinchMinDistance: 10, // pixels to start recognizing pinch (reduced)
-  pinchSensitivity: 5, // pixels of pinch change to trigger zoom (reduced)
-  tapMaxDistance: 12, // max movement for tap recognition
-  tapMaxTime: 200, // max ms for tap
-  gestureDecisionDistance: 15, // pixels before deciding gesture type (reduced)
+  // Thresholds - small values for instant response
+  deadZone: 15, // pixels from start before rotation activates
+  zoomDeadZone: 20, // pixels of pinch change before zoom activates
+  tapMaxMove: 10, // max pixels movement for tap detection
+  tapMaxTime: 300, // max ms for tap detection
 };
 let sharedMem = null;
 let pointers = { cmd: 0, gameStructure: 0 };
@@ -213,35 +207,8 @@ function setKeyUI(key, active) {
   }
 }
 
-// Momentum update - call this periodically to maintain actions during touch
-function updateTouchMomentum() {
-  if (!touchState.isDown) return;
-
-  const now = Date.now();
-  const elapsed = now - touchState.lastActionTime;
-
-  // If finger is down but no recent movement, keep last direction with momentum
-  if (elapsed < touchState.momentumDuration) {
-    // Maintain last direction
-    if (
-      touchState.gestureType === "swipe" &&
-      touchState.lastRotateDirection !== 0
-    ) {
-      touchState.rotateLeft = touchState.lastRotateDirection < 0;
-      touchState.rotateRight = touchState.lastRotateDirection > 0;
-    }
-    if (
-      touchState.gestureType === "pinch" &&
-      touchState.lastZoomDirection !== 0
-    ) {
-      touchState.zoomIn = touchState.lastZoomDirection > 0;
-      touchState.zoomOut = touchState.lastZoomDirection < 0;
-    }
-  }
-}
-
 // =========================================================================
-// TOUCH HELPER FUNCTIONS
+// TOUCH HELPER FUNCTIONS - Virtual Button System
 // =========================================================================
 
 function getTouchDistance(touch1, touch2) {
@@ -250,61 +217,95 @@ function getTouchDistance(touch1, touch2) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function getTouchCenter(touch1, touch2) {
-  return {
-    x: (touch1.clientX + touch2.clientX) / 2,
-    y: (touch1.clientY + touch2.clientY) / 2,
-  };
-}
-
-function setRotation(direction) {
-  // direction: -1 = left, 0 = stop, 1 = right
-  const now = Date.now();
-  if (direction !== 0) {
-    touchState.lastRotateDirection = direction;
-    touchState.lastActionTime = now;
+// Update rotation state based on current finger position vs start position
+// This runs every frame - gives instant button-like feel
+function updateRotationFromTouch() {
+  if (!touchState.singleTouch.active) {
+    touchState.rotateLeft = false;
+    touchState.rotateRight = false;
+    setKeyUI("left", false);
+    setKeyUI("right", false);
+    return;
   }
-  touchState.rotateLeft = direction < 0;
-  touchState.rotateRight = direction > 0;
-  setKeyUI("left", direction < 0);
-  setKeyUI("right", direction > 0);
-}
 
-function setZoom(direction) {
-  // direction: -1 = out, 0 = stop, 1 = in
-  const now = Date.now();
-  if (direction !== 0) {
-    touchState.lastZoomDirection = direction;
-    touchState.lastActionTime = now;
+  const deltaX =
+    touchState.singleTouch.currentX - touchState.singleTouch.startX;
+
+  // Simple threshold check - like pressing a button
+  if (deltaX < -touchState.deadZone) {
+    // Finger is LEFT of start point = LEFT button pressed
+    touchState.rotateLeft = true;
+    touchState.rotateRight = false;
+    setKeyUI("left", true);
+    setKeyUI("right", false);
+  } else if (deltaX > touchState.deadZone) {
+    // Finger is RIGHT of start point = RIGHT button pressed
+    touchState.rotateLeft = false;
+    touchState.rotateRight = true;
+    setKeyUI("left", false);
+    setKeyUI("right", true);
+  } else {
+    // Finger in dead zone = no button pressed
+    touchState.rotateLeft = false;
+    touchState.rotateRight = false;
+    setKeyUI("left", false);
+    setKeyUI("right", false);
   }
-  touchState.zoomIn = direction > 0;
-  touchState.zoomOut = direction < 0;
-  setKeyUI("up", direction > 0);
-  setKeyUI("down", direction < 0);
 }
 
-function resetTouchOutputs() {
+// Update zoom state based on pinch distance change
+function updateZoomFromTouch() {
+  if (!touchState.twoFingerTouch.active) {
+    touchState.zoomIn = false;
+    touchState.zoomOut = false;
+    setKeyUI("up", false);
+    setKeyUI("down", false);
+    return;
+  }
+
+  const delta =
+    touchState.twoFingerTouch.currentDistance -
+    touchState.twoFingerTouch.initialDistance;
+
+  if (delta > touchState.zoomDeadZone) {
+    // Fingers spread apart = zoom IN (get closer)
+    touchState.zoomIn = true;
+    touchState.zoomOut = false;
+    setKeyUI("up", true);
+    setKeyUI("down", false);
+  } else if (delta < -touchState.zoomDeadZone) {
+    // Fingers pinched together = zoom OUT (get further)
+    touchState.zoomIn = false;
+    touchState.zoomOut = true;
+    setKeyUI("up", false);
+    setKeyUI("down", true);
+  } else {
+    // In dead zone
+    touchState.zoomIn = false;
+    touchState.zoomOut = false;
+    setKeyUI("up", false);
+    setKeyUI("down", false);
+  }
+}
+
+function clearAllTouchState() {
+  touchState.singleTouch.active = false;
+  touchState.singleTouch.identifier = null;
+  touchState.twoFingerTouch.active = false;
   touchState.rotateLeft = false;
   touchState.rotateRight = false;
   touchState.zoomIn = false;
   touchState.zoomOut = false;
-  touchState.lastRotateDirection = 0;
-  touchState.lastZoomDirection = 0;
   setKeyUI("left", false);
   setKeyUI("right", false);
   setKeyUI("up", false);
   setKeyUI("down", false);
 }
 
-function resetTouchState() {
-  touchState.gestureType = null;
-  touchState.isDown = false;
-  resetTouchOutputs();
-}
-
 function setupInput() {
   // =========================================================================
-  // TOUCH INPUT HANDLERS - Optimized for responsiveness
+  // TOUCH INPUT HANDLERS - Virtual Button System
+  // Instant response like keyboard - position-based, not gesture-based
   // =========================================================================
 
   window.addEventListener(
@@ -313,32 +314,33 @@ function setupInput() {
       if (appState !== "GAME") return;
       e.preventDefault();
 
-      const now = Date.now();
-      touchState.isDown = true;
-      touchState.lastActionTime = now;
-
-      if (e.touches.length === 2) {
-        // Two fingers - immediately lock to pinch gesture
-        touchState.gestureType = "pinch";
-        touchState.lastPinchDistance = getTouchDistance(
+      if (e.touches.length >= 2) {
+        // Two or more fingers - switch to zoom mode
+        touchState.singleTouch.active = false;
+        touchState.twoFingerTouch.active = true;
+        touchState.twoFingerTouch.initialDistance = getTouchDistance(
           e.touches[0],
           e.touches[1],
         );
-        touchState.pinchCenter = getTouchCenter(e.touches[0], e.touches[1]);
-        // Clear rotation but keep zoom momentum
-        touchState.lastRotateDirection = 0;
-        setRotation(0);
+        touchState.twoFingerTouch.currentDistance =
+          touchState.twoFingerTouch.initialDistance;
+        // Immediately update states
+        updateRotationFromTouch();
+        updateZoomFromTouch();
       } else if (e.touches.length === 1) {
-        // Single finger - could be tap or swipe, decide later
-        touchState.gestureType = null; // Will be decided on move or end
-        touchState.startX = e.touches[0].clientX;
-        touchState.startY = e.touches[0].clientY;
-        touchState.lastX = e.touches[0].clientX;
-        touchState.lastY = e.touches[0].clientY;
-        touchState.startTime = now;
-        // Clear zoom but preserve state for potential swipe
-        touchState.lastZoomDirection = 0;
-        setZoom(0);
+        // Single finger - rotation mode
+        const touch = e.touches[0];
+        touchState.singleTouch.active = true;
+        touchState.singleTouch.identifier = touch.identifier;
+        touchState.singleTouch.startX = touch.clientX;
+        touchState.singleTouch.startY = touch.clientY;
+        touchState.singleTouch.currentX = touch.clientX;
+        touchState.singleTouch.currentY = touch.clientY;
+        touchState.singleTouch.startTime = Date.now();
+        touchState.twoFingerTouch.active = false;
+        // Immediately update states
+        updateRotationFromTouch();
+        updateZoomFromTouch();
       }
     },
     { passive: false },
@@ -350,76 +352,19 @@ function setupInput() {
       if (appState !== "GAME") return;
       e.preventDefault();
 
-      const now = Date.now();
-
-      if (e.touches.length === 2) {
-        // Handle pinch zoom
-        if (touchState.gestureType !== "pinch") {
-          // Switching to pinch from another gesture
-          touchState.gestureType = "pinch";
-          touchState.lastPinchDistance = getTouchDistance(
-            e.touches[0],
-            e.touches[1],
-          );
-          touchState.lastRotateDirection = 0;
-          setRotation(0);
-        }
-
-        const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
-        const delta = currentDistance - touchState.lastPinchDistance;
-
-        // Respond to pinch changes
-        if (Math.abs(delta) > touchState.pinchSensitivity) {
-          if (delta > 0) {
-            // Pinch out = zoom in (get closer)
-            setZoom(1);
-          } else {
-            // Pinch in = zoom out (get further)
-            setZoom(-1);
-          }
-          // Update for continuous tracking
-          touchState.lastPinchDistance = currentDistance;
-        }
-        // Don't clear zoom on small movements - momentum handles it
-      } else if (e.touches.length === 1) {
-        const currentX = e.touches[0].clientX;
-        const currentY = e.touches[0].clientY;
-        const deltaFromStart =
-          Math.abs(currentX - touchState.startX) +
-          Math.abs(currentY - touchState.startY);
-        const deltaX = currentX - touchState.lastX;
-
-        // Decide gesture type if not yet decided
-        if (
-          touchState.gestureType === null &&
-          deltaFromStart > touchState.gestureDecisionDistance
-        ) {
-          // Enough movement to decide - this is a swipe
-          touchState.gestureType = "swipe";
-        }
-
-        // Handle swipe rotation
-        if (
-          touchState.gestureType === "swipe" ||
-          deltaFromStart > touchState.swipeMinDistance
-        ) {
-          if (touchState.gestureType === null) {
-            touchState.gestureType = "swipe";
-          }
-
-          // Respond to movement direction - with momentum
-          if (Math.abs(deltaX) > touchState.swipeSensitivity) {
-            if (deltaX > 0) {
-              setRotation(1); // right
-            } else {
-              setRotation(-1); // left
-            }
-          }
-          // Don't clear rotation on small movements - momentum handles it
-        }
-
-        touchState.lastX = currentX;
-        touchState.lastY = currentY;
+      if (e.touches.length >= 2 && touchState.twoFingerTouch.active) {
+        // Update pinch distance - zoom follows finger distance INSTANTLY
+        touchState.twoFingerTouch.currentDistance = getTouchDistance(
+          e.touches[0],
+          e.touches[1],
+        );
+        updateZoomFromTouch();
+      } else if (e.touches.length === 1 && touchState.singleTouch.active) {
+        // Update finger position - rotation follows finger position INSTANTLY
+        const touch = e.touches[0];
+        touchState.singleTouch.currentX = touch.clientX;
+        touchState.singleTouch.currentY = touch.clientY;
+        updateRotationFromTouch();
       }
     },
     { passive: false },
@@ -432,53 +377,49 @@ function setupInput() {
       e.preventDefault();
 
       if (e.touches.length === 0) {
-        // All fingers lifted
-        const endTime = Date.now();
-        const elapsed = endTime - touchState.startTime;
-        const changedTouch = e.changedTouches[0];
-
-        // Check for tap - only if gesture wasn't already decided as swipe/pinch
-        if (
-          touchState.gestureType === null ||
-          touchState.gestureType === "tap"
-        ) {
-          const deltaX = Math.abs(changedTouch.clientX - touchState.startX);
-          const deltaY = Math.abs(changedTouch.clientY - touchState.startY);
-          const totalDelta = deltaX + deltaY;
+        // All fingers lifted - check for tap first
+        if (touchState.singleTouch.active) {
+          const elapsed = Date.now() - touchState.singleTouch.startTime;
+          const deltaX = Math.abs(
+            touchState.singleTouch.currentX - touchState.singleTouch.startX,
+          );
+          const deltaY = Math.abs(
+            touchState.singleTouch.currentY - touchState.singleTouch.startY,
+          );
 
           if (
             elapsed < touchState.tapMaxTime &&
-            totalDelta < touchState.tapMaxDistance
+            deltaX < touchState.tapMaxMove &&
+            deltaY < touchState.tapMaxMove
           ) {
-            // This is a tap - trigger check alignment
+            // This was a tap - trigger check alignment
             inputs.check = 1;
-            console.log("Tap detected - check alignment triggered");
+            console.log("Tap - check alignment");
           }
         }
 
-        // Clear all touch state immediately on lift
-        resetTouchState();
+        // Clear everything
+        clearAllTouchState();
       } else if (e.touches.length === 1) {
-        // One finger remains after lifting one from pinch
-        // Transition to potential swipe
-        const now = Date.now();
-        touchState.gestureType = null;
-        touchState.startX = e.touches[0].clientX;
-        touchState.startY = e.touches[0].clientY;
-        touchState.lastX = e.touches[0].clientX;
-        touchState.lastY = e.touches[0].clientY;
-        touchState.startTime = now;
-        touchState.lastActionTime = now;
-        // Clear zoom
-        touchState.lastZoomDirection = 0;
-        setZoom(0);
+        // Went from 2 fingers to 1 - switch to rotation mode
+        const touch = e.touches[0];
+        touchState.twoFingerTouch.active = false;
+        touchState.singleTouch.active = true;
+        touchState.singleTouch.identifier = touch.identifier;
+        touchState.singleTouch.startX = touch.clientX;
+        touchState.singleTouch.startY = touch.clientY;
+        touchState.singleTouch.currentX = touch.clientX;
+        touchState.singleTouch.currentY = touch.clientY;
+        touchState.singleTouch.startTime = Date.now();
+        updateRotationFromTouch();
+        updateZoomFromTouch();
       }
     },
     { passive: false },
   );
 
   window.addEventListener("touchcancel", (e) => {
-    resetTouchState();
+    clearAllTouchState();
   });
 
   // =========================================================================
@@ -591,8 +532,9 @@ function gameLoop() {
     previousHasWon = hasWon;
   }
 
-  // Update touch momentum (keeps actions going smoothly during finger movement)
-  updateTouchMomentum();
+  // Update touch states (virtual button system - instant like keyboard)
+  updateRotationFromTouch();
+  updateZoomFromTouch();
 
   // Combine keyboard and touch inputs
   let combinedLeft = inputs.left || (touchState.rotateLeft ? 1 : 0);
