@@ -3,77 +3,71 @@
 //! Twin-Engine Architecture: The game no longer handles inputs directly.
 //! All inputs are processed by the Controller which sends GameCommands.
 
-use crate::command_handler::{PendingBlankScreen, PendingReset, RenderingPaused};
+use crate::command_handler::SharedMemResource;
+use crate::command_handler::{PendingAnimation, PendingBlankScreen, PendingReset, RenderingPaused};
+use crate::state_emitter::FrameCounterResource;
 use crate::utils::camera::{apply_pending_rotation, apply_pending_zoom};
 use crate::utils::game_functions::{
-    apply_pending_check_alignment, handle_door_animation,
-    spawn_score_bar, update_score_bar_animation, update_ui_scale,
+    apply_pending_check_alignment, handle_door_animation, spawn_score_bar,
+    update_score_bar_animation, update_ui_scale,
 };
-use crate::utils::objects::{GameEntity, GamePhase, GameState, PersistentCamera, UIEntity};
-use crate::utils::setup::{setup, SetupConfig};
-use crate::utils::constants::camera_3d_constants::{
+use crate::utils::objects::{
+    DoorWinEntities, GameEntity, PersistentCamera, RandomGen, RoundStartTimestamp,
+    UIEntity,
+};
+use crate::utils::setup::setup_environment;
+use bevy::prelude::*;
+use crate::utils::setup::setup_round;
+use core::sync::atomic::Ordering;
+use shared::constants::camera_3d_constants::{
     CAMERA_3D_INITIAL_X, CAMERA_3D_INITIAL_Y, CAMERA_3D_INITIAL_Z,
 };
-use bevy::prelude::*;
 
-// Plugin for managing all the game systems based on the current game phase.
+// Plugin for managing all the game systems.config
 pub struct SystemsLogicPlugin;
 
 impl Plugin for SystemsLogicPlugin {
     /// Builds the plugin by adding the systems to the app.
     fn build(&self, app: &mut App) {
-        // Start directly in Playing phase (menu is handled externally by Controller)
-        app.insert_state(GamePhase::Playing)
-            .init_resource::<SetupConfig>()
-            .init_resource::<BlankScreenState>()
-            // Spawn persistent camera once at startup
-            .add_systems(Startup, spawn_persistent_camera)
+        app.init_resource::<BlankScreenState>()
+            // Spawn persistent camera and static environment once at startup
+            .add_systems(Startup, (spawn_persistent_camera, setup_environment))
             // Global UI responsiveness system (runs every frame)
             .add_systems(Update, update_ui_scale)
-            // Global command-driven system for reset (runs any time, handles reset from any state)
-            .add_systems(Update, handle_reset_command)
+            // Global command-driven systems
+            .add_systems(
+                Update,
+                (handle_reset_command, handle_animation_door_command),
+            )
             // Rendering control systems (run any time)
             .add_systems(Update, (apply_blank_screen, handle_rendering_pause))
-            // Resetting State - transient state that immediately goes to Playing
-            .add_systems(OnEnter(GamePhase::Resetting), on_enter_resetting)
-            // Playing State
-            .add_systems(OnEnter(GamePhase::Playing), (setup, spawn_score_bar).chain())
+            // Input and Logic Systems
             .add_systems(
                 Update,
                 (
-                    // Command-driven systems (from Twin-Engine Controller)
-                    (apply_pending_rotation, apply_pending_zoom, apply_pending_check_alignment)
-                        .run_if(in_state(GamePhase::Playing).and(is_not_animating).and(is_not_paused)),
-                    // Animation systems (run while animating, but not when paused)
-                    (handle_door_animation, update_score_bar_animation)
-                        .run_if(in_state(GamePhase::Playing).and(is_not_paused)),
+                    // Command-driven systems
+                    // We removed is_not_animating check for now as checking SHM atomic every frame in run condition is OK but we can just simplify.
+                    (
+                        apply_pending_rotation,
+                        apply_pending_zoom,
+                        apply_pending_check_alignment,
+                    )
+                        .run_if(is_not_paused),
+                    // Animation systems
+                    (handle_door_animation, update_score_bar_animation).run_if(is_not_paused),
+                    // Ensure local score bar exists (if cleared by reset)
+                    // Note: In new flow, score bar spawning is handled by check_alignment or reset?
+                    // Actually check_alignment spawns it. Reset clears it.
                 ),
-            )
-            .add_systems(
-                OnExit(GamePhase::Playing),
-                despawn_all_game_and_ui,
             );
-            // Won State is now passive - controller handles black screen and timing
     }
-}
-
-// ============================================================================
-// RUN CONDITIONS
-// ============================================================================
-
-fn is_not_animating(game_state: Res<GameState>) -> bool {
-    !game_state.is_animating
 }
 
 fn is_not_paused(rendering_paused: Res<RenderingPaused>) -> bool {
     !rendering_paused.0
 }
 
-// ============================================================================
-// PERSISTENT CAMERA SETUP
-// ============================================================================
-
-/// Spawns the 3D camera once at startup. This camera persists across resets.
+/// This camera persists across resets to avoid artifacts.
 fn spawn_persistent_camera(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
@@ -86,10 +80,6 @@ fn spawn_persistent_camera(mut commands: Commands) {
         PersistentCamera,
     ));
 }
-
-// ============================================================================
-// BLANK SCREEN RESOURCES AND COMPONENTS
-// ============================================================================
 
 /// Resource tracking blank screen state
 #[derive(Resource, Default)]
@@ -118,64 +108,134 @@ fn spawn_blank_overlay(commands: &mut Commands) {
     ));
 }
 
-// ============================================================================
-// RESET HANDLING
-// ============================================================================
+
 
 /// Unified reset handler that works from any state.
 /// Always transitions to Resetting state first, which then goes to Playing.
+/// Unified reset handler.
 fn handle_reset_command(
     mut pending_reset: ResMut<PendingReset>,
     mut commands: Commands,
-    mut next_state: ResMut<NextState<GamePhase>>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<StandardMaterial>>,
+    random_gen: ResMut<RandomGen>,
+    time: Res<Time>,
+    mut frame_counter: ResMut<FrameCounterResource>,
+    camera_query: Query<&mut Transform, With<PersistentCamera>>,
+    game_entities: Query<Entity, With<GameEntity>>,
+    ambient_light: Option<ResMut<GlobalAmbientLight>>,
+    shm_res: Option<Res<SharedMemResource>>,
+    ui_entities: Query<Entity, With<UIEntity>>,
+    spotlight_query: Query<&mut SpotLight, (Without<crate::utils::objects::HoleLight>, Without<GameEntity>)>,
+    round_start: ResMut<RoundStartTimestamp>,
+    mut door_win_entities: ResMut<DoorWinEntities>,
 ) {
-    let Some(config) = pending_reset.0.take() else {
+    if !pending_reset.0 {
         return;
-    };
+    }
 
-    info!("Reset command received with config seed: {}", config.seed);
+    pending_reset.0 = false;
 
-    // Store config for setup to use when entering Playing state
-    commands.insert_resource(SetupConfig(Some(config)));
+    // Reset commands received
+    frame_counter.0 = 0;
 
-    // Always go through Resetting state - this ensures:
-    // 1. OnExit of current state runs (cleanup)
-    // 2. OnEnter(Resetting) runs (clears overlays, transitions to Playing)
-    // 3. OnEnter(Playing) runs (setup)
-    next_state.set(GamePhase::Resetting);
+    // Clear animation state to avoid stale entity references after despawn
+    door_win_entities.animating_door = None;
+    door_win_entities.animating_light = None;
+    door_win_entities.animating_emissive = None;
+    door_win_entities.animation_start_time = None;
+
+    // Clear is_animating flag in SHM
+    if let Some(ref shm_res) = shm_res {
+        shm_res.0.get().game_structure_game.is_animating.store(false, Ordering::Relaxed);
+    }
+
+    despawn_all_game_and_ui(commands.reborrow(), game_entities, ui_entities);
+
+    // Reset shared memory game structure to default values for new round
+    setup_round(
+        commands.reborrow(),
+        meshes,
+        materials,
+        random_gen,
+        camera_query,
+        spotlight_query,
+        ambient_light,
+        shm_res,
+        round_start,
+        time,
+    );
+
+    spawn_score_bar(&mut commands);
+
 }
 
-/// Called when entering Resetting state - cleanup and immediately transition to Playing
-fn on_enter_resetting(
-    mut commands: Commands,
-    entities_query: Query<Entity, With<GameEntity>>,
-    ui_entities_query: Query<Entity, With<UIEntity>>,
-    mut next_state: ResMut<NextState<GamePhase>>,
+
+/// System to handle animation door command
+fn handle_animation_door_command(
+    mut pending_anim: ResMut<PendingAnimation>,
+    mut door_win_entities: ResMut<DoorWinEntities>,
+    shm_res: Option<Res<SharedMemResource>>,
+    time: Res<Time>,
+    // Queries to find entities (similar to game_functions)
+    frame_query: Query<&crate::utils::objects::BaseFrame>,
+    light_query: Query<(Entity, &ChildOf), With<crate::utils::objects::HoleLight>>,
+    emissive_query: Query<(Entity, &ChildOf), With<crate::utils::objects::HoleEmissive>>,
 ) {
-    info!("Entering Resetting state - cleaning up and transitioning to Playing");
+    if !pending_anim.0 {
+        return;
+    }
+    pending_anim.0 = false;
 
-    // Despawn all game entities
-    for entity in &entities_query {
-        commands.entity(entity).try_despawn();
+    let Some(shm_res) = shm_res else { return };
+    let shm = shm_res.0.get();
+
+    if shm.game_structure_game.is_animating.load(Ordering::Relaxed) {
+        info!("Animation door command ignored: already animating");
+        return;
     }
 
-    // Despawn all UI entities
-    for entity in &ui_entities_query {
-        commands.entity(entity).try_despawn();
+    // Find entities matching target
+    let target = shm
+        .game_structure_game
+        .target_door
+        .load(Ordering::Relaxed) as usize;
+
+    let mut found_light = None;
+    let mut found_emissive = None;
+
+    for (light_entity, parent) in light_query.iter() {
+        if let Ok(frame) = frame_query.get(parent.parent()) {
+            if frame.door_index == target {
+                found_light = Some(light_entity);
+                break;
+            }
+        }
     }
 
-    // Note: BlankScreenOverlay is preserved - only removed via explicit B key toggle
+    for (emissive_entity, parent) in emissive_query.iter() {
+        if let Ok(frame) = frame_query.get(parent.parent()) {
+            if frame.door_index == target {
+                found_emissive = Some(emissive_entity);
+                break;
+            }
+        }
+    }
 
-    // Immediately transition to Playing
-    next_state.set(GamePhase::Playing);
+    if found_light.is_none() && found_emissive.is_none() {
+        warn!("Animation door command: no light/emissive entities found for target_door={}", target);
+        return;
+    }
+
+    // Only start animation if we found at least one entity
+    info!("Starting door animation for target_door={}, light={:?}, emissive={:?}", target, found_light, found_emissive);
+    door_win_entities.animating_light = found_light;
+    door_win_entities.animating_emissive = found_emissive;
+    door_win_entities.animation_start_time = Some(time.elapsed());
+    shm.game_structure_game
+        .is_animating
+        .store(true, Ordering::Relaxed);
 }
-
-// Win state is now passive - controller handles black screen and timing via shared memory.
-// The game just remains in Won state until controller sends reset command.
-
-// ============================================================================
-// RENDERING CONTROL SYSTEMS
-// ============================================================================
 
 /// System to apply blank screen command - spawns/despawns a black fullscreen overlay
 fn apply_blank_screen(
@@ -221,10 +281,6 @@ fn handle_rendering_pause(
         }
     }
 }
-
-// ============================================================================
-// CLEANUP SYSTEMS
-// ============================================================================
 
 /// Despawn all game and UI entities
 fn despawn_all_game_and_ui(

@@ -1,23 +1,11 @@
 //! This file defines the various objects, resources, and components used in the game.
 use bevy::prelude::*;
 use rand_chacha::rand_core::SeedableRng;
-use std::time::Duration;
 
-use crate::utils::constants::game_constants::SEED;
+use shared::constants::game_constants::SEED;
 
 use rand_chacha::ChaCha8Rng;
-
-/// Game state enum representing the different states the game can be in
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, States, Hash)]
-pub enum GamePhase {
-    #[default]
-    // The game is currently being played
-    Playing,
-    // The game has been won
-    Won,
-    // Transient state for resetting - immediately transitions to Playing
-    Resetting,
-}
+use std::time::Duration;
 
 /// Different types of pyramids
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,38 +17,6 @@ pub enum PyramidType {
 impl Default for PyramidType {
     fn default() -> Self {
         PyramidType::Type1
-    }
-}
-
-/// Configuration used to setup the game (received from Controller)
-#[derive(Debug, Clone, PartialEq)]
-pub struct GameConfig {
-    pub seed: u64,
-    /// 0 or 1
-    pub pyramid_type_code: u32,
-    pub pyramid_base_radius: f32,
-    pub pyramid_height: f32,
-    pub pyramid_start_orientation_rad: f32,
-    pub pyramid_target_door_index: usize,
-    /// 3 faces, 4 channels
-    pub pyramid_color_faces: [[f32; 4]; 3],
-}
-
-impl Default for GameConfig {
-    fn default() -> Self {
-        Self {
-            seed: SEED,
-            pyramid_type_code: 0,
-            pyramid_base_radius: 2.5,
-            pyramid_height: 4.0,
-            pyramid_start_orientation_rad: 0.0,
-            pyramid_target_door_index: 5,
-            pyramid_color_faces: [
-                 [1.0, 0.2, 0.2, 1.0],
-                 [0.2, 0.5, 1.0, 1.0],
-                 [0.2, 1.0, 0.3, 1.0],
-            ],
-        }
     }
 }
 
@@ -88,39 +44,21 @@ pub struct DecorationSet {
     pub decorations: Vec<Decoration>,
 }
 
-/// The resource of the current state of the game
-#[derive(Resource, Clone, Default, Debug)]
-pub struct GameState {
-    pub random_seed: u64,
-
-    pub pyramid_type: PyramidType,
-    pub pyramid_base_radius: f32,
-    pub pyramid_height: f32,
-    pub pyramid_start_orientation_rad: f32,
-    pub pyramid_color_faces: [Color; 3],
-
-    // The winning door side index
-    pub pyramid_target_door_index: usize,
-
-    // The time when the game started.
-    pub start_time: Option<Duration>,
-    // The time when the game ended.
-    pub end_time: Option<Duration>,
-
-    // Metrics
-    // The number of attempts the player has made.
-    pub nr_attempts: u32,
-    // The cosine alignment of the camera with the target face when the player wins.
-    pub cosine_alignment: Option<f32>,
-
-    // Animation state
+/// The current winning doors and animation state
+#[derive(Resource, Default)]
+pub struct DoorWinEntities {
+    // Animation entities
     pub animating_door: Option<Entity>,
     pub animating_light: Option<Entity>,
     pub animating_emissive: Option<Entity>,
+    
+    // Animation timing
     pub animation_start_time: Option<Duration>,
-    pub is_animating: bool,
-    pub pending_phase: Option<GamePhase>, // Phase to transition to after animation
 }
+
+/// Resource to track the start time of the current round
+#[derive(Resource, Default)]
+pub struct RoundStartTimestamp(pub Option<Duration>);
 
 /// Random number generator
 #[derive(Resource)]

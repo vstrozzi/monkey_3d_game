@@ -1,17 +1,14 @@
 //! Implementation of a 3D first-person orbit camera plugin for monkey_3d_game.
 
 use crate::command_handler::{PendingRotation, PendingZoom};
-use crate::utils::constants::camera_3d_constants::{
+
+use crate::utils::objects::RotableComponent;
+use std::sync::atomic::Ordering;
+use bevy::prelude::*;
+use crate::command_handler::SharedMemResource;
+use shared::constants::camera_3d_constants::{
     CAMERA_3D_INITIAL_Y, CAMERA_3D_MAX_RADIUS, CAMERA_3D_MIN_RADIUS,
 };
-use crate::utils::objects::{GameState, RotableComponent};
-use bevy::prelude::*;
-
-
-
-// ============================================================================
-// COMMAND-DRIVEN FUNCTIONS (used by Twin-Engine architecture)
-// ============================================================================
 
 /// Apply rotation to all rotable entities by the given delta (in radians).
 /// Positive delta rotates right, negative rotates left.
@@ -28,10 +25,7 @@ pub fn apply_rotation(
 
 /// Apply zoom to the camera by the given delta.
 /// Positive delta zooms out, negative zooms in.
-pub fn apply_zoom(
-    delta: f32,
-    camera_query: &mut Query<&mut Transform, With<Camera3d>>,
-) {
+pub fn apply_zoom(delta: f32, camera_query: &mut Query<&mut Transform, With<Camera3d>>) {
     let Ok(mut transform) = camera_query.single_mut() else {
         return;
     };
@@ -41,25 +35,29 @@ pub fn apply_zoom(
     radius += delta;
     radius = radius.clamp(CAMERA_3D_MIN_RADIUS, CAMERA_3D_MAX_RADIUS);
 
-    transform.translation = Vec3::new(
-        radius * yaw.sin(),
-        CAMERA_3D_INITIAL_Y,
-        radius * yaw.cos(),
-    );
+    transform.translation = Vec3::new(radius * yaw.sin(), CAMERA_3D_INITIAL_Y, radius * yaw.cos());
     transform.look_at(Vec3::ZERO, Vec3::Y);
 }
-
-// ============================================================================
-// SYSTEMS FOR PENDING ACTIONS
-// ============================================================================
 
 /// System that applies pending rotation from commands.
 pub fn apply_pending_rotation(
     pending: Res<PendingRotation>,
-    gamestate: Res<GameState>,
     mut rot_entities: Query<&mut Transform, (With<RotableComponent>, Without<Camera3d>)>,
+    shm_res: Option<Res<SharedMemResource>>,
+
 ) {
-    if gamestate.is_animating || pending.0.abs() < 0.0001 {
+    // Read shared memory
+    let Some(shm_res) = shm_res else {
+        error!("Shared Memory not initialized in setup_round");
+        return;
+    };
+
+    let shm = shm_res.0.get();
+
+    let is_animating = shm.game_structure_game.is_animating.load(Ordering::Relaxed);
+
+
+    if is_animating || pending.0.abs() < 0.0001 {
         return;
     }
     apply_rotation(pending.0, &mut rot_entities);
@@ -68,12 +66,23 @@ pub fn apply_pending_rotation(
 /// System that applies pending zoom from commands.
 pub fn apply_pending_zoom(
     pending: Res<PendingZoom>,
-    gamestate: Res<GameState>,
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
+    shm_res: Option<Res<SharedMemResource>>,
 ) {
-    if gamestate.is_animating || pending.0.abs() < 0.0001 {
+
+    // Read shared memory
+    let Some(shm_res) = shm_res else {
+        error!("Shared Memory not initialized in setup_round");
+        return;
+    };
+
+    let shm = shm_res.0.get();
+
+    let is_animating = shm.game_structure_game.is_animating.load(Ordering::Relaxed);
+
+
+    if is_animating || pending.0.abs() < 0.0001 {
         return;
     }
     apply_zoom(pending.0, &mut camera_query);
 }
-

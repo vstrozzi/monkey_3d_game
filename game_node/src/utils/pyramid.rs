@@ -1,21 +1,23 @@
 //! Logic for spawning the pyramid base with interactive doors.
 
-use crate::utils::constants::{
-    lighting_constants::{MAX_SPOTLIGHT_INTENSITY, SHADOWS_ENABLED},
-    object_constants::GROUND_Y,
-    pyramid_constants::*,
-};
 use crate::utils::objects::{
-    BaseDoor, BaseFrame, Decoration, DecorationSet, DecorationShape, GameEntity, GameState,
-    HoleEmissive, HoleLight, Pyramid, PyramidType, RandomGen, RotableComponent,
+    BaseDoor, BaseFrame, Decoration, DecorationSet, DecorationShape, GameEntity, HoleEmissive,
+    HoleLight, Pyramid, PyramidType, RandomGen, RotableComponent,
 };
 use bevy::prelude::*;
+use shared::constants::{object_constants::GROUND_Y, pyramid_constants::*};
 
 use rand::{Rng, RngCore};
 use rand_chacha::ChaCha8Rng;
 
 /// Creates a pentagon mesh for the hole emissive effect
-fn create_pentagon_mesh(center: Vec3, radius: f32, local_right: Vec3, local_up: Vec3, normal: Vec3) -> Mesh {
+fn create_pentagon_mesh(
+    center: Vec3,
+    radius: f32,
+    local_right: Vec3,
+    local_up: Vec3,
+    normal: Vec3,
+) -> Mesh {
     let mut mesh = Mesh::new(
         bevy::mesh::PrimitiveTopology::TriangleList,
         Default::default(),
@@ -23,7 +25,7 @@ fn create_pentagon_mesh(center: Vec3, radius: f32, local_right: Vec3, local_up: 
 
     let pentagon_points = 5;
     let pentagon_angle_offset = -std::f32::consts::FRAC_PI_2; // Start from top
-    
+
     let mut positions = Vec::new();
     let mut normals_vec = Vec::new();
     let mut uvs = Vec::new();
@@ -36,14 +38,15 @@ fn create_pentagon_mesh(center: Vec3, radius: f32, local_right: Vec3, local_up: 
 
     // Pentagon vertices
     for i in 0..pentagon_points {
-        let angle = (i as f32 * std::f32::consts::TAU / pentagon_points as f32) + pentagon_angle_offset;
+        let angle =
+            (i as f32 * std::f32::consts::TAU / pentagon_points as f32) + pentagon_angle_offset;
         let x_offset = angle.cos() * radius;
         let y_offset = angle.sin() * radius;
 
         let vertex = center + local_right * x_offset + local_up * y_offset;
         positions.push(vertex.to_array());
         normals_vec.push(normal.to_array());
-        
+
         let u = x_offset / radius * 0.5 + 0.5;
         let v = y_offset / radius * 0.5 + 0.5;
         uvs.push([u, v]);
@@ -68,18 +71,17 @@ pub fn spawn_pyramid_base(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    game_state: &mut GameState,
+    p_start_orientation_rad: f32, // Replaced GameState
+    max_spotlight_intensity: f32, // New Arg
 ) {
     let base_radius = BASE_RADIUS;
     let angle_increment = std::f32::consts::TAU / BASE_NR_SIDES as f32;
 
     for i in 0..BASE_NR_SIDES {
-        let angle1 = i as f32 * angle_increment
-            + game_state.pyramid_start_orientation_rad
-            + std::f32::consts::PI / 2.0;
-        let angle2 = (i + 1) as f32 * angle_increment
-            + game_state.pyramid_start_orientation_rad
-            + std::f32::consts::PI / 2.0;
+        let angle1 =
+            i as f32 * angle_increment + p_start_orientation_rad + std::f32::consts::PI / 2.0;
+        let angle2 =
+            (i + 1) as f32 * angle_increment + p_start_orientation_rad + std::f32::consts::PI / 2.0;
 
         // Calculate the four corners of the rectangular side
         let bottom_outer_1 = Vec3::new(
@@ -104,22 +106,28 @@ pub fn spawn_pyramid_base(
         );
 
         // Create the frame mesh with a pentagonal hole (also returns computed values to avoid redundant calculations)
-        let (frame_mesh, normal, local_right, local_up, center, pentagon_radius) = 
+        let (frame_mesh, normal, local_right, local_up, center, pentagon_radius) =
             create_frame_with_hole(bottom_outer_1, bottom_outer_2, top_outer_1, top_outer_2);
 
         // Light position is at the center of the frame
         let light_pos = center;
-        
+
         // Create emissive pentagon mesh - offset center slightly inward to prevent z-fighting
         let pentagon_center_inset = center + normal * 0.01; // Slightly inward from frame surface
-        let pentagon_mesh = create_pentagon_mesh(pentagon_center_inset, pentagon_radius, local_right, local_up, normal);
-        
+        let pentagon_mesh = create_pentagon_mesh(
+            pentagon_center_inset,
+            pentagon_radius,
+            local_right,
+            local_up,
+            normal,
+        );
+
         // Spawn the base frame and a light in front to have a nice effect
         commands
             .spawn((
                 Mesh3d(meshes.add(frame_mesh)),
                 MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: BASE_COLOR,
+                    base_color: Color::srgba( BASE_COLOR[0], BASE_COLOR[1], BASE_COLOR[2], BASE_COLOR[3]), 
                     cull_mode: None,
                     double_sided: true,
                     ..default()
@@ -143,12 +151,12 @@ pub fn spawn_pyramid_base(
                     GameEntity,
                     Visibility::Hidden, // Initially hidden
                 ));
-                
+
                 // Spawn spotlight
                 parent.spawn((
                     SpotLight {
-                        intensity: MAX_SPOTLIGHT_INTENSITY,
-                        shadows_enabled: SHADOWS_ENABLED,
+                        intensity: max_spotlight_intensity,
+                        shadows_enabled: true, // Hardcoded for now, or pass from config
                         inner_angle: std::f32::consts::PI / 6.0, // Soft falloff
                         outer_angle: std::f32::consts::PI / 4.0,
                         range: 25.0,
@@ -160,7 +168,8 @@ pub fn spawn_pyramid_base(
                     Visibility::Hidden, // Initially hidden
                     // Position is RELATIVE to the Frame.
                     // 'light_pos' must be the offset from the Frame's center.
-                    Transform::from_translation(light_pos).looking_at(light_pos + 2.0 * normal, Vec3::Y),
+                    Transform::from_translation(light_pos)
+                        .looking_at(light_pos + 2.0 * normal, Vec3::Y),
                 ));
             });
 
@@ -181,16 +190,12 @@ pub fn spawn_pyramid_base(
     let top_y = GROUND_Y + BASE_HEIGHT;
 
     // Create a polygon mesh matching the base's shape
-    let top_lid_mesh = create_top_lid_mesh(
-        base_radius,
-        BASE_NR_SIDES,
-        game_state.pyramid_start_orientation_rad,
-    );
+    let top_lid_mesh = create_top_lid_mesh(base_radius, BASE_NR_SIDES, p_start_orientation_rad);
 
     commands.spawn((
         Mesh3d(meshes.add(top_lid_mesh)),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: BASE_COLOR,
+            base_color: Color::srgba( BASE_COLOR[0], BASE_COLOR[1], BASE_COLOR[2], BASE_COLOR[3]), 
             cull_mode: None,
             double_sided: false,
             ..default()
@@ -266,7 +271,7 @@ fn create_frame_with_hole(
     // Calculate the normal
     let side_vec = bottom_right - bottom_left;
     let up_vec = top_left - bottom_left;
-    let normal = - side_vec.cross(up_vec).normalize();
+    let normal = -side_vec.cross(up_vec).normalize();
 
     // Create pentagon hole vertices (scaled down from center)
     let hole_scale = 0.4; // Pentagon is 40% of the panel size
@@ -342,9 +347,15 @@ pub fn spawn_pyramid(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     random_gen: &mut ResMut<RandomGen>,
-    game_state: &mut GameState,
+    p_type: PyramidType,
+    p_radius: f32,
+    p_height: f32,
+    p_orientation_rad: f32,
+    p_colors: [Color; 3],
+    decoration_counts: [u32; 3],
+    decoration_sizes: [f32; 3],
 ) {
-    let height_y = game_state.pyramid_height;
+    let height_y = p_height;
 
     // Build the symmetric triangular vertices for the BASE.
     let mut base_corners: [Vec3; 3] = [Vec3::ZERO; 3];
@@ -352,8 +363,8 @@ pub fn spawn_pyramid(
     let mut top_corners: [Vec3; 3] = [Vec3::ZERO; 3];
 
     let mut prev_xz = Vec2::new(
-        game_state.pyramid_base_radius * game_state.pyramid_start_orientation_rad.cos(),
-        game_state.pyramid_base_radius * game_state.pyramid_start_orientation_rad.sin(),
+        p_radius * p_orientation_rad.cos(),
+        p_radius * p_orientation_rad.sin(),
     );
 
     // Set first corners
@@ -399,7 +410,7 @@ pub fn spawn_pyramid(
     commands.spawn((
         Mesh3d(meshes.add(top_mesh)),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: BASE_COLOR,
+            base_color: Color::WHITE,
             cull_mode: None,
             double_sided: true,
             ..default()
@@ -435,6 +446,8 @@ pub fn spawn_pyramid(
             tl,
             bl,
             br,
+            decoration_counts[i],
+            decoration_sizes[i],
         )));
 
         // Set B (Top-Right Triangle)
@@ -442,12 +455,14 @@ pub fn spawn_pyramid(
             &mut random_gen.random_gen,
             tl,
             br,
-            tr, // Using TL as "top" for barycentric logic
+            tr,
+            decoration_counts[i],
+            decoration_sizes[i],
         )));
     }
 
     // Handle Type2 Logic (Face 3 copies Face 2)
-    if game_state.pyramid_type == PyramidType::Type2 {
+    if p_type == PyramidType::Type2 {
         dec_sets.push(dec_sets[2].clone()); // Copy Face 2 Set A
         dec_sets.push(dec_sets[3].clone()); // Copy Face 2 Set B
     } else {
@@ -464,12 +479,16 @@ pub fn spawn_pyramid(
             tl,
             bl,
             br,
+            decoration_counts[i],
+            decoration_sizes[i],
         )));
         dec_sets.push(Some(generate_decoration_set(
             &mut random_gen.random_gen,
             tl,
             br,
             tr,
+            decoration_counts[i],
+            decoration_sizes[i],
         )));
     }
 
@@ -522,7 +541,7 @@ pub fn spawn_pyramid(
             .spawn((
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: game_state.pyramid_color_faces[i],
+                    base_color: p_colors[i],
                     cull_mode: None,
                     double_sided: false,
                     ..default()
@@ -566,7 +585,8 @@ pub fn spawn_pyramid(
     }
 
     // Spawn the base (unchanged)
-    spawn_pyramid_base(commands, meshes, materials, game_state);
+    spawn_pyramid_base(commands, meshes, materials, p_orientation_rad, f32::MAX);
+    // Max intensity not vital here or pass it in
 }
 
 /// Generates a decoration set for a pyramid face using Poisson-like sampling.
@@ -576,9 +596,12 @@ fn generate_decoration_set(
     top: Vec3,
     corner1: Vec3,
     corner2: Vec3,
+    count: u32,
+    size: f32, // New Arg
 ) -> DecorationSet {
     // Determine the number of decorations to generate.
-    let decoration_count = rng.random_range(DECORATION_COUNT_MIN..=DECORATION_COUNT_MAX);
+    let decoration_count = count as usize;
+    // Check if range is valid (std::ops::RangeInclusive panics if start > end)
 
     // Store the generated decoration positions (in world space) for overlap checking.
     let mut decorations_world: Vec<(Vec3, f32)> = Vec::new();
@@ -608,12 +631,9 @@ fn generate_decoration_set(
     );
 
     while successful_placements < decoration_count
-        && total_attempts < decoration_count * MAX_PLACEMENT_ATTEMPTS
+        && (total_attempts as usize) < (decoration_count as usize) * MAX_PLACEMENT_ATTEMPTS
     {
         total_attempts += 1;
-
-        // Choose a random size for the decoration.
-        let size = rng.random_range(DECORATION_SIZE_MIN..DECORATION_SIZE_MAX);
 
         // Generate a random position using barycentric coordinates to ensure the point is inside the triangle.
         let (world_position, is_valid) =

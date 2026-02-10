@@ -1,0 +1,1 @@
+# Fix new SharedGameStructure between game and controller using the flags 

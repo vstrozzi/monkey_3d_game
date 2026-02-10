@@ -9,7 +9,6 @@ This architecture allows for extremely low-latency, lock-free communication betw
 *   **Shared Library (`shared`)**: Defines the atomic data structures (`SharedCommands`, `SharedGameState`) and handles platform-specific shared memory creation (mmap on Native, SharedArrayBuffer on Web).
 *   **Game Node (`game_node`)**: The Bevy application. It reads commands from shared memory and writes game state to shared memory every frame.
 *   **Controllers**:
-    *   **Native (`controller_native`)**: Rust TUI application. Spawns the game process and maps keyboard input to atomic flags.
     *   **Python (`controller_python`)**: Tkinter + transitions GUI built on the `monkey_shared` PyO3 bindings for interactive control.
     *   **Web (`controller_web`)**: HTML/JS interface. Loads the WASM game and interacts via shared memory buffers.
 
@@ -38,10 +37,6 @@ cargo run -p game_node
 
 ### 2. Start a Controller (Terminal 2)
 
-#### Native Controller (Rust)
-```bash
-cargo run -p controller_native
-```
 
 #### Python Controller
 ```bash
@@ -52,9 +47,11 @@ cargo build --release -p shared --features python
 cp target/release/libshared.so controller_python/monkey_shared.so
 
 # Run the GUI controller
-    python controller_python/controller.py
+python controller_python/controller.py
 ```
 
 #### Web Controller
 1. Build WASM (`wasm-pack build game_node --target web --out-dir pkg`)
 2. Launch
+
+

@@ -6,8 +6,6 @@ use crate::command_handler::SharedMemResource;
 #[cfg(target_arch = "wasm32")]
 use shared::open_shared_memory;
 
-
-
 /// Plugin to add wasm shared memory to the Bevy systems
 pub struct WebAdapterPlugin;
 

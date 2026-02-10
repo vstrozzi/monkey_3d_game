@@ -6,45 +6,26 @@ use bevy::mesh::Indices;
 use bevy::render::render_resource::PrimitiveTopology;
 
 use crate::log;
-use crate::utils::constants::{
-    camera_3d_constants::{CAMERA_3D_INITIAL_X, CAMERA_3D_INITIAL_Y, CAMERA_3D_INITIAL_Z},
-    game_constants::SEED,
-    lighting_constants::{AMBIENT_BRIGHTNESS, MAIN_SPOTLIGHT_INTENSITY},
-    object_constants::GROUND_Y,
-    pyramid_constants::*,
-};
 use crate::utils::objects::*;
 use crate::utils::pyramid::spawn_pyramid;
+use shared::constants::{
+    lighting_constants::{GLOBAL_AMBIENT_LIGHT_INTENSITY, SPOTLIGHT_LIGHT_INTENSITY},
+    object_constants::GROUND_Y,
+};
 
-use rand::{Rng, RngCore, SeedableRng};
+use crate::command_handler::SharedMemResource;
+use core::sync::atomic::Ordering;
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-/// Initial game scene, with the camera, ground, lights, and the pyramid
-pub fn setup(
+/// Initial game scene, with the camera, ground, lights, and the pyramid.
+/// Setup the persistent entitites across resets.
+pub fn setup_environment(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut random_gen: ResMut<RandomGen>,
-    time: Res<Time>,
-    setup_config: Option<Res<SetupConfig>>,
-    mut camera_query: Query<&mut Transform, With<PersistentCamera>>,
 ) {
-    let config_to_use = setup_config.and_then(|c| c.0.clone());
-
-    if let Some(ref config) = config_to_use {
-        random_gen.random_gen = ChaCha8Rng::seed_from_u64(config.seed);
-    }
-
-    // Reset the persistent camera position (camera was spawned at startup)
-    if let Ok(mut camera_transform) = camera_query.single_mut() {
-        *camera_transform = Transform::from_xyz(
-            CAMERA_3D_INITIAL_X,
-            CAMERA_3D_INITIAL_Y,
-            CAMERA_3D_INITIAL_Z,
-        )
-        .looking_at(Vec3::ZERO, Vec3::Y);
-    }
-
+    // Ground Plane
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(50.0, 50.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
@@ -53,9 +34,9 @@ pub fn setup(
             ..default()
         })),
         Transform::from_xyz(0.0, GROUND_Y, 0.0),
-        GameEntity,
     ));
 
+    // Curved Background
     commands.spawn((
         Mesh3d(meshes.add(create_extended_semicircle_mesh(9.0, 10.0, 20.0, 64))),
         MeshMaterial3d(materials.add(StandardMaterial {
@@ -67,12 +48,12 @@ pub fn setup(
             ..default()
         })),
         Transform::from_xyz(0.0, GROUND_Y, 0.0),
-        GameEntity,
     ));
 
+    // Main Spotlight
     commands.spawn((
         SpotLight {
-            intensity: MAIN_SPOTLIGHT_INTENSITY,
+            intensity: SPOTLIGHT_LIGHT_INTENSITY, // Default start value
             shadows_enabled: true,
             outer_angle: std::f32::consts::PI / 3.0,
             range: 45.0,
@@ -80,91 +61,126 @@ pub fn setup(
             ..default()
         },
         Transform::from_xyz(0.0, 15.0, 0.0).looking_at(Vec3::ZERO, -Vec3::Y),
-        GameEntity,
     ));
 
-    commands.insert_resource(AmbientLight {
+    // Ambient Light
+    commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
-        brightness: AMBIENT_BRIGHTNESS,
+        brightness: GLOBAL_AMBIENT_LIGHT_INTENSITY, // Default start value
         affects_lightmapped_meshes: true,
     });
 
-    let mut game_state = setup_game_state(&mut commands, &time, &mut random_gen, config_to_use.as_ref());
+    log!("🌍 Environment Setup Complete");
+}
 
+/// Setup a specific game trial.
+/// This spawns the pyramid and resets the camera. All spawned entities are marked with GameEntity.
+pub fn setup_round(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut random_gen: ResMut<RandomGen>,
+    mut camera_query: Query<&mut Transform, With<PersistentCamera>>,
+    mut spotlight_query: Query<&mut SpotLight, (Without<HoleLight>, Without<GameEntity>)>,
+    ambient_light: Option<ResMut<GlobalAmbientLight>>,
+    shm_res: Option<Res<SharedMemResource>>,
+    mut round_start: ResMut<crate::utils::objects::RoundStartTimestamp>,
+    time: Res<Time>,
+) {
+    // Read shared memory
+    let Some(shm_res) = shm_res else {
+        error!("Shared Memory not initialized in setup_round");
+        return;
+    };
+
+    let shm = shm_res.0.get();
+
+    // Set round start time
+    round_start.0 = Some(time.elapsed());
+
+    // Read control values from sh,
+    let gs_ctrl = &shm.game_structure_control;
+    // Reset all fields of game structure
+    let gs_game = &shm.game_structure_game;
+    gs_game.reset_all_fields(gs_ctrl);
+
+    // Update all the game resoruces based on the new configuration
+
+    let seed = gs_game.seed.load(Ordering::Relaxed);
+    random_gen.random_gen = ChaCha8Rng::seed_from_u64(seed);
+
+    let main_intensity = f32::from_bits(gs_game.main_spotlight_intensity.load(Ordering::Relaxed));
+    let ambient_intensity = f32::from_bits(gs_game.ambient_brightness.load(Ordering::Relaxed));
+    // Update Lights
+    for mut spot in spotlight_query.iter_mut() {
+        spot.intensity = main_intensity;
+    }
+
+    if let Some(mut ambient) = ambient_light {
+        ambient.brightness = ambient_intensity;
+    }
+
+    // Reset the persistent camera position
+    if let Ok(mut camera_transform) = camera_query.single_mut() {
+        *camera_transform = Transform::from_xyz(
+            f32::from_bits(gs_ctrl.camera_x.load(Ordering::Relaxed)),
+            f32::from_bits(gs_ctrl.camera_y.load(Ordering::Relaxed)),
+            f32::from_bits(gs_ctrl.camera_z.load(Ordering::Relaxed)),
+        )
+        .looking_at(Vec3::ZERO, Vec3::Y);
+    }
+
+    gs_game.win_time.store(0, Ordering::Relaxed);
+
+    let p_type_code = gs_game.pyramid_type.load(Ordering::Relaxed);
+    let p_type = if p_type_code == 0 {
+        PyramidType::Type1
+    } else {
+        PyramidType::Type2
+    };
+
+    let radius = f32::from_bits(gs_game.base_radius.load(Ordering::Relaxed));
+    let height = f32::from_bits(gs_game.height.load(Ordering::Relaxed));
+    let orient = f32::from_bits(gs_game.start_orient.load(Ordering::Relaxed));
+
+    let mut colors = [Color::WHITE; 3];
+    for i in 0..3 {
+        let r = f32::from_bits(gs_game.colors[i * 4 + 0].load(Ordering::Relaxed));
+        let g = f32::from_bits(gs_game.colors[i * 4 + 1].load(Ordering::Relaxed));
+        let b = f32::from_bits(gs_game.colors[i * 4 + 2].load(Ordering::Relaxed));
+        let a = f32::from_bits(gs_game.colors[i * 4 + 3].load(Ordering::Relaxed));
+        colors[i] = Color::srgba(r, g, b, a);
+    }
+
+    let mut decoration_counts = [0; 3];
+    for i in 0..3 {
+        decoration_counts[i] = gs_game.decorations_count[i].load(Ordering::Relaxed);
+    }
+
+    let mut decoration_sizes = [0.0; 3];
+    for i in 0..3 {
+        decoration_sizes[i] = f32::from_bits(gs_game.decorations_size[i].load(Ordering::Relaxed));
+    }
+
+    // Spawn the pyramid
     spawn_pyramid(
         &mut commands,
         &mut meshes,
         &mut materials,
         &mut random_gen,
-        &mut game_state,
+        p_type,
+        radius,
+        height,
+        orient,
+        colors,
+        decoration_counts,
+        decoration_sizes,
     );
 
-    if config_to_use.is_some() {
-        commands.insert_resource(SetupConfig(None));
-    }
-
-    log!("🎮 Pyramid Game Started!");
+    log!("🎮 Round Started!");
 }
 
 
-
-/// Sets up the game state from config (if provided) or generates random values.
-pub fn setup_game_state(
-    commands: &mut Commands,
-    time: &Res<Time>,
-    random_gen: &mut ResMut<RandomGen>,
-    config: Option<&GameConfig>,
-) -> GameState {
-    // Determine values from config or random generation
-    let (random_seed, pyramid_type, pyramid_base_radius, pyramid_height, pyramid_start_orientation_rad, pyramid_colors, pyramid_target_door_index) = 
-        if let Some(cfg) = config {
-            let ptype = if cfg.pyramid_type_code == 0 { PyramidType::Type1 } else { PyramidType::Type2 };
-            let colors: [Color; 3] = cfg.pyramid_color_faces.map(|c| Color::srgba(c[0], c[1], c[2], c[3]));
-            (cfg.seed, ptype, cfg.pyramid_base_radius, cfg.pyramid_height, cfg.pyramid_start_orientation_rad, colors, cfg.pyramid_target_door_index)
-        } else {
-            let ptype = if random_gen.random_gen.next_u64() % 2 == 0 { PyramidType::Type1 } else { PyramidType::Type2 };
-            let base_radius = random_gen.random_gen.random_range(PYRAMID_BASE_RADIUS_MIN..=PYRAMID_BASE_RADIUS_MAX);
-            let height = random_gen.random_gen.random_range(PYRAMID_HEIGHT_MIN..=PYRAMID_HEIGHT_MAX);
-            let orientation = random_gen.random_gen.random_range(PYRAMID_ANGLE_OFFSET_RAD_MIN..PYRAMID_ANGLE_OFFSET_RAD_MAX);
-            
-            let mut colors = PYRAMID_COLORS;
-            let mut target_door = 5;
-            if ptype == PyramidType::Type2 {
-                colors[2] = colors[1];
-                target_door = 2;
-            }
-            (SEED, ptype, base_radius, height, orientation, colors, target_door)
-        };
-
-    let game_state = GameState {
-        random_seed,
-        pyramid_type,
-        pyramid_base_radius,
-        pyramid_height,
-        pyramid_start_orientation_rad,
-        pyramid_color_faces: pyramid_colors,
-        pyramid_target_door_index,
-        start_time: Some(time.elapsed()),
-        end_time: None,
-        nr_attempts: 0,
-        cosine_alignment: Some(0.0),
-        animating_emissive: None,
-        animating_door: None,
-        animating_light: None,
-        animation_start_time: None,
-        is_animating: false,
-        pending_phase: None,
-    };
-
-    let cloned_game_state = game_state.clone();
-    commands.insert_resource(game_state);
-    cloned_game_state
-}
-
-
-
-#[derive(Resource, Default)]
-pub struct SetupConfig(pub Option<GameConfig>);
 
 fn create_extended_semicircle_mesh(
     radius: f32,

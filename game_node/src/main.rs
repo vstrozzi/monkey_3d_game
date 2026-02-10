@@ -1,7 +1,5 @@
 //! Start-up for the monkey_3d_game, with window, plugins, and resources.
-//!
-//! Twin-Engine Architecture: This is the Game Node. It receives commands from
-//! the Controller and emits state via Shared Memory.
+//! This is the Game Node. It receives commands from the Controller and emits state via Shared Memory.
 
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
@@ -9,15 +7,20 @@ use bevy::{
     window::*,
 };
 
+// Re-export shared memory functions for WASM
+#[cfg(target_arch = "wasm32")]
+use shared::{create_shared_memory_wasm, WebSharedMemory};
+
+
+use shared::constants::game_constants::REFRESH_RATE_HZ;
+
 use game_node::{
     command_handler::CommandHandlerPlugin,
     state_emitter::StateEmitterPlugin,
     web_adapter::WebAdapterPlugin,
-    // native_adapter removed, integrated into command_handler
     utils::{
-        constants::game_constants::REFRESH_RATE_HZ,
         debug_functions::DebugFunctionsPlugin,
-        objects::{GameState, RandomGen},
+        objects::{RandomGen, DoorWinEntities, RoundStartTimestamp},
         systems_logic::SystemsLogicPlugin,
     },
 };
@@ -51,16 +54,15 @@ fn main() {
             }),
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin::default(),
-            // Twin-Engine plugins
-            CommandHandlerPlugin, // Now handles SHM reading
-            StateEmitterPlugin,   // Now handles SHM writing
-            WebAdapterPlugin,     // Handles WASM SHM init
-            // Custom game plugins
+            CommandHandlerPlugin, 
+            StateEmitterPlugin,  
+            WebAdapterPlugin, 
             SystemsLogicPlugin,
             DebugFunctionsPlugin,
         ))
         .insert_resource(Time::<Fixed>::from_hz(REFRESH_RATE_HZ))
         .insert_resource(RandomGen::default())
-        .insert_resource(GameState::default())
+        .insert_resource(DoorWinEntities::default())
+        .insert_resource(RoundStartTimestamp::default())
         .run();
 }

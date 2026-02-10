@@ -42,6 +42,61 @@ impl WebSharedMemory {
     pub fn get_game_structure_ptr(&self) -> usize {
         unsafe { &(*self.ptr).game_structure as *const _ as usize }
     }
+
+    /// Get offsets of fields within SharedGameStructure
+    /// Returns a JS Object { "frame_number": offset, ... }
+    pub fn get_game_structure_offsets(&self) -> JsValue {
+        let base = unsafe { &(*self.ptr).game_structure as *const _ as usize };
+        let gs = unsafe { &(*self.ptr).game_structure };
+
+        let make_offset = |field_ptr: *const _| -> u32 {
+             (field_ptr as usize - base) as u32
+        };
+
+        let offsets = js_sys::Object::new();
+        let set = |key: &str, val: u32| {
+            js_sys::Reflect::set(&offsets, &JsValue::from_str(key), &JsValue::from_f64(val as f64)).unwrap();
+        };
+
+        set("seed", make_offset(&gs.seed as *const _));
+        set("pyramid_type", make_offset(&gs.pyramid_type as *const _));
+        set("base_radius", make_offset(&gs.base_radius as *const _));
+        set("height", make_offset(&gs.height as *const _));
+        set("start_orient", make_offset(&gs.start_orient as *const _));
+        set("target_door", make_offset(&gs.target_door as *const _));
+        set("colors", make_offset(&gs.colors as *const _));
+
+        // Dynamic Constants
+        set("decoration_count_min", make_offset(&gs.decoration_count_min as *const _));
+        set("decoration_count_max", make_offset(&gs.decoration_count_max as *const _));
+        set("decoration_size_min", make_offset(&gs.decoration_size_min as *const _));
+        set("decoration_size_max", make_offset(&gs.decoration_size_max as *const _));
+
+        set("cosine_alignment_threshold", make_offset(&gs.cosine_alignment_threshold as *const _));
+
+        set("door_anim_fade_out", make_offset(&gs.door_anim_fade_out as *const _));
+        set("door_anim_stay_open", make_offset(&gs.door_anim_stay_open as *const _));
+        set("door_anim_fade_in", make_offset(&gs.door_anim_fade_in as *const _));
+
+        set("main_spotlight_intensity", make_offset(&gs.main_spotlight_intensity as *const _));
+        set("max_spotlight_intensity", make_offset(&gs.max_spotlight_intensity as *const _));
+        set("ambient_brightness", make_offset(&gs.ambient_brightness as *const _));
+
+        set("frame_number", make_offset(&gs.frame_number as *const _));
+        set("elapsed_secs", make_offset(&gs.elapsed_secs as *const _));
+        set("camera_radius", make_offset(&gs.camera_radius as *const _));
+        set("camera_x", make_offset(&gs.camera_x as *const _));
+        set("camera_y", make_offset(&gs.camera_y as *const _));
+        set("camera_z", make_offset(&gs.camera_z as *const _));
+        set("pyramid_yaw", make_offset(&gs.pyramid_yaw as *const _));
+        set("attempts", make_offset(&gs.attempts as *const _));
+        set("alignment", make_offset(&gs.alignment as *const _));
+        set("current_angle", make_offset(&gs.current_angle as *const _));
+        set("is_animating", make_offset(&gs.is_animating as *const _));
+        set("win_time", make_offset(&gs.win_time as *const _));
+        
+        offsets.into()
+    }
 }
 
 /// Handle to shared memory (wrapper for consistency with native API).

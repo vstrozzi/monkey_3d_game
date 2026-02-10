@@ -1,75 +1,38 @@
-//! Cross-platform shared memory interface for Monkey 3D Game.
+//! Cross-platform shared memory interface and constants for the game.
 //!
-//! This library provides fixed-size atomic data structures for lock-free communication
-//! between the game (renderer) and controller (state machine).
+//! This library provides fixed-size atomic data structures for atomic communication
+//! between the game (renderer) and controller (state machine). 
 //!
 //! ## Memory Layout
 //!
 //! SharedMemory {
-//!     commands: SharedCommands,           // Controller -> Game (one-way)
-//!     game_structure: SharedGameStructure // Bidirectional (both read/write)
-//! }
+//!     commands: SharedCommands,                 // Controller -> Game (one-way)
+//!     game_structure_contr: SharedGameStructure // Controller -> Game (one-way)
+//!     game_structure_game: SharedGameStructure  // Game ->  Controller (one-way)
 //!
-//! From controller perspective:
-//! - Write: commands + game_structure (to send commands and set/restore state)
-//! - Read: game_structure (to observe current state)
-
-/// Shared timing constants for stimulus experiments.
-/// These constants ensure consistent timing across all controllers.
-pub mod timing {
-    /// Target refresh rate in Hz (game runs at 60fps)
-    pub const REFRESH_RATE_HZ: u64 = 60;
-    
-    /// Duration to show black screen after win (in frames)
-    /// At 60fps, 60 frames = 1 second
-    pub const WIN_BLANK_DURATION_FRAMES: u64 = 60;
-    
-    /// Convert frames to approximate seconds
-    pub const fn frames_to_seconds(frames: u64) -> f32 {
-        frames as f32 / REFRESH_RATE_HZ as f32
-    }
-    
-    /// Convert seconds to frames
-    pub const fn seconds_to_frames(seconds: f32) -> u64 {
-        (seconds * REFRESH_RATE_HZ as f32) as u64
-    }
-}
-
+//! }
+//! 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+use std::sync::atomic::Ordering;
+pub mod constants;
+
 
 /// Commands sent from Controller to Game.
-///
-/// ## Byte Layout (9 bytes total)
-/// Offset 0: rotate_left (1 byte)
-/// Offset 1: rotate_right (1 byte)
-/// Offset 2: zoom_in (1 byte)
-/// Offset 3: zoom_out (1 byte)
-/// Offset 4: check_alignment (1 byte)
-/// Offset 5: reset (1 byte)
-/// Offset 6: blank_screen (1 byte)
-/// Offset 7: stop_rendering (1 byte)
-/// Offset 8: resume_rendering (1 byte)
 #[repr(C)]
 #[derive(Debug)]
 pub struct SharedCommands {
-    /// Rotate pyramid left (continuous)
+    // Continous
     pub rotate_left: AtomicBool,
-    /// Rotate pyramid right (continuous)
     pub rotate_right: AtomicBool,
-    /// Zoom camera in (continuous)
     pub zoom_in: AtomicBool,
-    /// Zoom camera out (continuous)
     pub zoom_out: AtomicBool,
-    /// Trigger: Check alignment
+    /// Trigger once
     pub check_alignment: AtomicBool,
-    /// Trigger: Reset game (Game reads config from game_structure when this is true)
     pub reset: AtomicBool,
-    /// Trigger: Blank the screen (show black overlay)
     pub blank_screen: AtomicBool,
-    /// Trigger: Stop/pause rendering
     pub stop_rendering: AtomicBool,
-    /// Trigger: Resume rendering
     pub resume_rendering: AtomicBool,
+    pub animation_door: AtomicBool,
 }
 
 impl SharedCommands {
@@ -84,16 +47,8 @@ impl SharedCommands {
             blank_screen: AtomicBool::new(false),
             stop_rendering: AtomicBool::new(false),
             resume_rendering: AtomicBool::new(false),
+            animation_door: AtomicBool::new(false),
         }
-    }
-
-    pub fn reset_triggers(&self) {
-        use std::sync::atomic::Ordering::Relaxed;
-        self.rotate_left.store(false, Relaxed);
-        self.rotate_right.store(false, Relaxed);
-        self.zoom_in.store(false, Relaxed);
-        self.zoom_out.store(false, Relaxed);
-        self.check_alignment.store(false, Relaxed);
     }
 }
 
@@ -117,122 +72,174 @@ pub enum Phase {
     Won = 1,
 }
 
-/// Unified game structure for bidirectional communication.
-///
-/// This structure contains both configuration (set by controller, read by game on reset)
-/// and state (written by game every frame, read by controller).
-///
-/// From controller perspective:
-/// - Write: Set config fields before triggering reset, or set state fields to restore state
-/// - Read: Observe current game state
-///
-/// ## Byte Layout
-/// Offset 0:   seed (8 bytes, u64)
-/// Offset 8:   pyramid_type (4 bytes, u32)
-/// Offset 12:  base_radius (4 bytes, f32 as u32 bits)
-/// Offset 16:  height (4 bytes, f32 as u32 bits)
-/// Offset 20:  start_orient (4 bytes, f32 as u32 bits)
-/// Offset 24:  target_door (4 bytes, u32)
-/// Offset 28:  colors[0..12] (48 bytes, 12 x f32 as u32 bits)
-/// Offset 76:  phase (4 bytes, u32: 0=Playing, 1=Won)
-/// Offset 80:  frame_number (8 bytes, u64)
-/// Offset 88:  elapsed_secs (4 bytes, f32 as u32 bits)
-/// Offset 92:  camera_radius (4 bytes, f32 as u32 bits)
-/// Offset 96:  camera_x (4 bytes, f32 as u32 bits)
-/// Offset 100: camera_y (4 bytes, f32 as u32 bits)
-/// Offset 104: camera_z (4 bytes, f32 as u32 bits)
-/// Offset 108: pyramid_yaw (4 bytes, f32 as u32 bits)
-/// Offset 112: attempts (4 bytes, u32)
-/// Offset 116: alignment (4 bytes, f32 as u32 bits, 2.0 = sentinel for None)
-/// Offset 120: is_animating (1 byte, bool)
-/// Offset 121: has_won (1 byte, bool)
-/// Offset 122: padding (2 bytes for alignment)
-/// Offset 124: win_time (4 bytes, f32 as u32 bits)
-/// Total: 128 bytes
+/// Shared atomic game structure for game state communication (1 for each Controller and Game, 2 in total, read-write respectively).
+/// It contains all the information realting the current game state (i.e. the game is a deterministic state).
+/// It is updated every Game tick by the game and whenever needed by the Controller.
 #[repr(C)]
 #[derive(Debug)]
 pub struct SharedGameStructure {
-    // === Config fields (set by controller, read by game on reset) ===
 
-    /// Random seed for procedural generation
+    // Fixed trials fields
     pub seed: AtomicU64,
-    /// Pyramid type: 0=Type1, 1=Type2
     pub pyramid_type: AtomicU32,
-    /// Base radius of pyramid (f32 bits)
     pub base_radius: AtomicU32,
-    /// Height of pyramid (f32 bits)
     pub height: AtomicU32,
-    /// Starting orientation in radians (f32 bits)
     pub start_orient: AtomicU32,
-    /// Target door index
     pub target_door: AtomicU32,
     /// Colors: 3 faces * 4 channels (RGBA) = 12 floats as u32 bits
     pub colors: [AtomicU32; 12],
 
-    // === State fields (written by game every frame, read by controller) ===
+    pub decorations_count: [AtomicU32; 3], // per face
+    pub decorations_size: [AtomicU32; 3], // per face
 
-    /// Current game phase: 0=Playing, 1=Won
-    pub phase: AtomicU32,
-    /// Current frame number
+    // Logic
+    pub cosine_alignment_threshold: AtomicU32,
+
+    // Animation Durations
+    pub door_anim_fade_out: AtomicU32,   
+    pub door_anim_stay_open: AtomicU32,  
+    pub door_anim_fade_in: AtomicU32,    
+
+    // Lighting
+    pub main_spotlight_intensity: AtomicU32, 
+    pub ambient_brightness: AtomicU32,      
+    pub max_spotlight_intensity: AtomicU32, 
+
+
+    // Dynamic trials fields
     pub frame_number: AtomicU64,
-    /// Elapsed seconds since game start (f32 bits)
     pub elapsed_secs: AtomicU32,
-    /// Camera orbit radius (f32 bits)
     pub camera_radius: AtomicU32,
-    /// Camera X position (f32 bits)
     pub camera_x: AtomicU32,
-    /// Camera Y position (f32 bits)
     pub camera_y: AtomicU32,
-    /// Camera Z position (f32 bits)
     pub camera_z: AtomicU32,
-    /// Pyramid yaw in radians (f32 bits)
-    pub pyramid_yaw: AtomicU32,
-    /// Number of alignment check attempts
     pub attempts: AtomicU32,
-    /// Cosine alignment: 1.0=aligned, -1.0=opposite, 2.0=sentinel for None (f32 bits)
-    pub alignment: AtomicU32,
-    /// Whether door animation is currently playing
+    pub current_alignment: AtomicU32,
+    pub current_angle: AtomicU32,
     pub is_animating: AtomicBool,
-    /// Whether the player has won
-    pub has_won: AtomicBool,
-    /// Padding for alignment
-    _padding: [u8; 2],
-    /// Time when player won (f32 bits), 0.0 if not won yet
     pub win_time: AtomicU32,
 }
 
 impl SharedGameStructure {
     pub const fn new() -> Self {
+        // Constant initialization from constants.rs module file.
+        use constants::{
+            game_constants::{
+                SEED,
+                COSINE_ALIGNMENT_TO_WIN},
+            pyramid_constants::{
+                DEFAULT_PYRAMID_TYPE,
+                PYRAMID_BASE_RADIUS,
+                PYRAMID_HEIGHT,
+                PYRAMID_START_ANGLE_OFFSET_RAD,
+                PYRAMID_TARGET_DOOR_INDEX,
+                PYRAMID_COLORS,
+                PYRAMID_DECORATIONS_COUNT,
+                PYRAMID_DECORATIONS_SIZE,
+                DOOR_ANIM_FADE_IN,
+                DOOR_ANIM_FADE_OUT,
+                DOOR_ANIM_STAY_OPEN
+            },
+            lighting_constants::{
+                SPOTLIGHT_LIGHT_INTENSITY,
+                GLOBAL_AMBIENT_LIGHT_INTENSITY,
+            },
+            camera_3d_constants::{
+                CAMERA_3D_INITIAL_X,
+                CAMERA_3D_INITIAL_Y,
+                CAMERA_3D_INITIAL_Z,
+                CAMERA_3D_INITIAL_RADIUS,
+            }
+
+        };
+            
         Self {
-            // Config defaults
-            seed: AtomicU64::new(0),
-            pyramid_type: AtomicU32::new(PyramidType::Type1 as u32),
-            base_radius: AtomicU32::new(0),
-            height: AtomicU32::new(0),
-            start_orient: AtomicU32::new(0),
-            target_door: AtomicU32::new(0),
+            // Fixed trials vars
+            seed: AtomicU64::new(SEED),
+            pyramid_type: AtomicU32::new(DEFAULT_PYRAMID_TYPE as u32),
+            base_radius: AtomicU32::new(PYRAMID_BASE_RADIUS.to_bits()),
+            height: AtomicU32::new(PYRAMID_HEIGHT.to_bits()),
+            start_orient: AtomicU32::new(PYRAMID_START_ANGLE_OFFSET_RAD.to_bits()),
+            target_door: AtomicU32::new(PYRAMID_TARGET_DOOR_INDEX as u32),
             colors: [
-                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
-                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
-                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+                AtomicU32::new(PYRAMID_COLORS[0][0].to_bits()), AtomicU32::new(PYRAMID_COLORS[0][1].to_bits()), AtomicU32::new(PYRAMID_COLORS[0][2].to_bits()), AtomicU32::new(PYRAMID_COLORS[0][3].to_bits()),
+                AtomicU32::new(PYRAMID_COLORS[1][0].to_bits()), AtomicU32::new(PYRAMID_COLORS[1][1].to_bits()), AtomicU32::new(PYRAMID_COLORS[1][2].to_bits()), AtomicU32::new(PYRAMID_COLORS[1][3].to_bits()),
+                AtomicU32::new(PYRAMID_COLORS[2][0].to_bits()), AtomicU32::new(PYRAMID_COLORS[2][1].to_bits()), AtomicU32::new(PYRAMID_COLORS[2][2].to_bits()), AtomicU32::new(PYRAMID_COLORS[2][3].to_bits()),
             ],
-            // State defaults
-            phase: AtomicU32::new(Phase::Playing as u32),
+
+            decorations_count: [
+                AtomicU32::new(PYRAMID_DECORATIONS_COUNT[0]),
+                AtomicU32::new(PYRAMID_DECORATIONS_COUNT[1]),
+                AtomicU32::new(PYRAMID_DECORATIONS_COUNT[2]),
+            ],
+            
+            decorations_size: [
+                AtomicU32::new(PYRAMID_DECORATIONS_SIZE[0].to_bits()),
+                AtomicU32::new(PYRAMID_DECORATIONS_SIZE[1].to_bits()),
+                AtomicU32::new(PYRAMID_DECORATIONS_SIZE[2].to_bits()),
+            ],
+
+            cosine_alignment_threshold: AtomicU32::new(COSINE_ALIGNMENT_TO_WIN.to_bits()), // 0.9 approx
+            
+            door_anim_fade_out: AtomicU32::new(DOOR_ANIM_FADE_OUT.to_bits()),
+            door_anim_stay_open: AtomicU32::new(DOOR_ANIM_STAY_OPEN.to_bits()),
+            door_anim_fade_in: AtomicU32::new(DOOR_ANIM_FADE_IN.to_bits()),
+            
+            main_spotlight_intensity: AtomicU32::new(SPOTLIGHT_LIGHT_INTENSITY.to_bits()),
+            ambient_brightness: AtomicU32::new(GLOBAL_AMBIENT_LIGHT_INTENSITY.to_bits()),
+            max_spotlight_intensity: AtomicU32::new(constants::lighting_constants::MAX_SPOTLIGHT_INTENSITY.to_bits()),
+
+            // Dynamic trials fields
             frame_number: AtomicU64::new(0),
             elapsed_secs: AtomicU32::new(0),
-            camera_radius: AtomicU32::new(0),
-            camera_x: AtomicU32::new(0),
-            camera_y: AtomicU32::new(0),
-            camera_z: AtomicU32::new(0),
-            pyramid_yaw: AtomicU32::new(0),
+            camera_radius: AtomicU32::new(CAMERA_3D_INITIAL_RADIUS.to_bits()),
+            camera_x: AtomicU32::new(CAMERA_3D_INITIAL_X.to_bits()),
+            camera_y: AtomicU32::new(CAMERA_3D_INITIAL_Y.to_bits()),
+            camera_z: AtomicU32::new(CAMERA_3D_INITIAL_Z.to_bits()),
             attempts: AtomicU32::new(0),
-            alignment: AtomicU32::new(0),
+            current_alignment: AtomicU32::new(f32::to_bits(0.0)),
+            current_angle: AtomicU32::new(0),
             is_animating: AtomicBool::new(false),
-            has_won: AtomicBool::new(false),
-            _padding: [0; 2],
             win_time: AtomicU32::new(0),
         }
     }
+
+    pub fn reset_all_fields(&self, other: &SharedGameStructure) {
+        self.seed.store(other.seed.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.pyramid_type.store(other.pyramid_type.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.base_radius.store(other.base_radius.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.height.store(other.height.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.start_orient.store(other.start_orient.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.target_door.store(other.target_door.load(Ordering::Relaxed), Ordering::Relaxed);
+        for i in 0..12 {
+            self.colors[i].store(other.colors[i].load(Ordering::Relaxed), Ordering::Relaxed);
+        }
+        for i in 0..3 {
+            self.decorations_count[i].store(other.decorations_count[i].load(Ordering::Relaxed), Ordering::Relaxed);
+            self.decorations_size[i].store(other.decorations_size[i].load(Ordering::Relaxed), Ordering::Relaxed);
+        }
+        self.cosine_alignment_threshold.store(other.cosine_alignment_threshold.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.door_anim_fade_out.store(other.door_anim_fade_out.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.door_anim_stay_open.store(other.door_anim_stay_open.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.door_anim_fade_in.store(other.door_anim_fade_in.load(Ordering::Relaxed), Ordering::Relaxed);
+        
+        self.main_spotlight_intensity.store(other.main_spotlight_intensity.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.ambient_brightness.store(other.ambient_brightness.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.max_spotlight_intensity.store(other.max_spotlight_intensity.load(Ordering::Relaxed), Ordering::Relaxed);
+
+        self.frame_number.store(other.frame_number.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.elapsed_secs.store(other.elapsed_secs.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.camera_radius.store(other.camera_radius.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.camera_x.store(other.camera_x.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.camera_y.store(other.camera_y.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.camera_z.store(other.camera_z.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.attempts.store(other.attempts.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.current_alignment.store(other.current_alignment.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.current_angle.store(other.current_angle.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.is_animating.store(other.is_animating.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.win_time.store(other.win_time.load(Ordering::Relaxed), Ordering::Relaxed);
+    }
+
 }
 
 impl Default for SharedGameStructure {
@@ -240,25 +247,28 @@ impl Default for SharedGameStructure {
 }
 
 /// Combined shared memory region between Controller and Game.
-///
-/// ## Byte Layout
-/// Offset 0:  commands (9 bytes + padding)
-/// Offset 16: game_structure (128 bytes) - aligned to 8 bytes due to AtomicU64
-///
-/// Note: Actual offsets may vary due to alignment requirements.
-/// Use the pointer getter methods for accurate offsets.
+/// Using sequence number to track updates and synchronize between read and write operations.
 #[repr(C)]
 #[derive(Debug)]
 pub struct SharedMemory {
     pub commands: SharedCommands,
-    pub game_structure: SharedGameStructure,
+    pub game_structure_game: SharedGameStructure,
+    pub game_structure_control: SharedGameStructure,
+
+    pub commands_seq: AtomicU32, // Sequence number for commands
+    pub game_structure_game_seq: AtomicU32, // Sequence number for game structure from game
+    pub game_structure_control_seq: AtomicU32, // Sequence number for game structure from controller
 }
 
 impl SharedMemory {
     pub const fn new() -> Self {
         Self {
             commands: SharedCommands::new(),
-            game_structure: SharedGameStructure::new(),
+            game_structure_game: SharedGameStructure::new(),
+            game_structure_control: SharedGameStructure::new(),
+            commands_seq: AtomicU32::new(0),
+            game_structure_game_seq: AtomicU32::new(0),
+            game_structure_control_seq: AtomicU32::new(0),
         }
     }
 }
@@ -267,7 +277,7 @@ impl Default for SharedMemory {
     fn default() -> Self { Self::new() }
 }
 
-// Ensure Send/Sync for FFI/Thread usage
+// Ensure Send/Sync for thread usage
 unsafe impl Send for SharedMemory {}
 unsafe impl Sync for SharedMemory {}
 
