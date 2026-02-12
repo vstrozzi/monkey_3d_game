@@ -49,7 +49,6 @@ pub mod object_constants {
 
 /// Pyramid object
 pub mod pyramid_constants {
-    use crate::PyramidType;
 
     pub const PYRAMID_BASE_RADIUS: f32 = 2.5;
     pub const PYRAMID_HEIGHT: f32 = 4.0;
@@ -61,10 +60,7 @@ pub mod pyramid_constants {
 
     // Angle increment of each side of the pyramid's base in radians
     pub const PYRAMID_ANGLE_INCREMENT_RAD: f32 = 120.0 * (std::f32::consts::PI / 180.0);
-
-    // Default Pyramid Type
-    pub const DEFAULT_PYRAMID_TYPE: PyramidType = PyramidType::Type1; // 0=Type1, 1=Type2
-
+    
     pub const PYRAMID_COLORS: [[f32; 4]; 3] = [
     [1.0, 0.0, 0.0, 1.0], // red, green, blue, alpha
     [0.0, 1.0, 0.0, 1.0], // green

@@ -176,15 +176,12 @@ pub fn handle_door_animation(
     if !is_animating {
         return;
     }
-    use crate::log;
-    log!("Door animation tick: is_animating=true, processing animation...");
+
     let Some(start_time) = door_win_entities.animation_start_time else {
         // No start time set — animation state is inconsistent, clear it
-        log!("handle_door_animation: is_animating=true but no start_time, clearing.");
         gs_game.is_animating.store(false, Ordering::Relaxed);
         return;
     };
-    log!("time is time={} and start time={}", time.elapsed().as_secs_f32(), start_time.as_secs_f32());
     let elapsed = (time.elapsed() - start_time).as_secs_f32();
 
     // Config values from SHM
@@ -197,7 +194,6 @@ pub fn handle_door_animation(
     // Get light entity from door_win_entities (winning_light = SpotLight/HoleLight)
     let Some(light_entity) = door_win_entities.winning_light else {
         // Entity was despawned (e.g. by reset)
-        log!("handle_door_animation: winning_light is None, clearing animation.");
         door_win_entities.animation_start_time = None;
         gs_game.is_animating.store(false, Ordering::Relaxed);
         return;
@@ -206,14 +202,11 @@ pub fn handle_door_animation(
     // Get light visibility and component
     let Ok((mut light_visibility, mut spotlight)) = light_query.get_mut(light_entity) else {
         // Entity no longer valid 
-        warn!("handle_door_animation: light entity not found in query, clearing animation.");
         door_win_entities.animation_start_time = None;
         gs_game.is_animating.store(false, Ordering::Relaxed);
         return;
     };
 
-    log!("handle_door_animation: elapsed={:.2}s, fade_out_end={:.2}s, stay_open_end={:.2}s, fade_in_end={:.2}s",
-        elapsed, fade_out_end, stay_open_end, fade_in_end);
     // Calculate animation intensity (0.0 to 1.0)
     let intensity_factor = if elapsed < fade_out_end {
         // Phase 1: Fade Out (Opening) - 0.0 to 1.0
@@ -236,9 +229,9 @@ pub fn handle_door_animation(
         
         // Animation is in progress — update spotlight
         *light_visibility = Visibility::Visible;
-        spotlight.intensity = max_spotlight_intensity * intensity_factor;
-        log!("handle_door_animation: spotlight set visible, intensity={:.0}, range={:.1}, inner_angle={:.3}, outer_angle={:.3}",
-            spotlight.intensity, spotlight.range, spotlight.inner_angle, spotlight.outer_angle);
+
+        let light_intensity = max_spotlight_intensity * intensity_factor;
+        spotlight.intensity = light_intensity;
 
         // Also update emissive material
         if let Some(emissive_entity) = door_win_entities.winning_emissive {
@@ -250,9 +243,9 @@ pub fn handle_door_animation(
                 if let Some(material) = materials.get_mut(&material_handle.0) {
                     let light_color = spotlight.color.to_linear();
                     material.emissive = LinearRgba::new(
-                        light_color.red * max_spotlight_intensity * intensity_factor,
-                        light_color.green * max_spotlight_intensity * intensity_factor,
-                        light_color.blue * max_spotlight_intensity * intensity_factor,
+                        light_color.red * light_intensity,
+                        light_color.green * light_intensity,
+                        light_color.blue * light_intensity,
                         1.0,
                     );
                 }

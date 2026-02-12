@@ -94,7 +94,4 @@ fn emit_state_to_shm(
         }
     }
 
-    // Update sequence number to indicate new data is available
-    shm.game_structure_game_seq.fetch_add(1, Ordering::Relaxed);
-
 }

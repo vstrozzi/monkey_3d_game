@@ -37,7 +37,6 @@ impl SharedMemoryWrapper {
 
             // Fixed vars in trial
             dict.set_item("seed", gs.seed.load(Ordering::Relaxed))?;
-            dict.set_item("pyramid_type", gs.pyramid_type.load(Ordering::Relaxed))?;
             dict.set_item("base_radius", f32::from_bits(gs.base_radius.load(Ordering::Relaxed)))?;
             dict.set_item("height", f32::from_bits(gs.height.load(Ordering::Relaxed)))?;
             dict.set_item("start_orient", f32::from_bits(gs.start_orient.load(Ordering::Relaxed)))?;
@@ -125,7 +124,6 @@ impl SharedMemoryWrapper {
     fn write_game_structure(
         &mut self,
         seed: u64,
-        pyramid_type: u32,
         base_radius: f32,
         height: f32,
         start_orient: f32,
@@ -148,17 +146,10 @@ impl SharedMemoryWrapper {
             )));
         }
 
-        if self.read_commands_seq() == 0{
-            return Err(PyErr::new::<PyValueError, _>(
-                "Cannot write game structure while command sequence is zero.".to_string(),
-            ));
-        }
-
         let shm = self.inner.get();
         let gs = &shm.game_structure_control;
 
         gs.seed.store(seed, Ordering::Relaxed);
-        gs.pyramid_type.store(pyramid_type, Ordering::Relaxed);
         gs.base_radius.store(base_radius.to_bits(), Ordering::Relaxed);
         gs.height.store(height.to_bits(), Ordering::Relaxed);
         gs.start_orient.store(start_orient.to_bits(), Ordering::Relaxed);
@@ -183,35 +174,10 @@ impl SharedMemoryWrapper {
         gs.main_spotlight_intensity.store(main_spotlight_intensity.to_bits(), Ordering::Relaxed);
         gs.ambient_brightness.store(ambient_brightness.to_bits(), Ordering::Relaxed);
         gs.max_spotlight_intensity.store(max_spotlight_intensity.to_bits(), Ordering::Relaxed);
-
-        // Signal we wrote
-        self.notify_command_update();
-
         Ok(())
     }
 
-    fn read_commands_seq(&self) -> u32 {
-        let shm = self.inner.get();
-        shm.commands_seq.load(Ordering::Relaxed)
-    }
 
-
-    fn notify_command_update(&mut self) {
-        let shm = self.inner.get();
-        shm.commands_seq.store(1, Ordering::Relaxed);
-    }
-
-    /// Read the current value of game_structure_game_seq
-    fn read_game_structure_game_seq(&self) -> u32 {
-        let shm = self.inner.get();
-        shm.game_structure_game_seq.load(Ordering::Relaxed)
-    }
-
-    /// Read the current value of game_structure_control_seq
-    fn read_game_structure_control_seq(&self) -> u32 {
-        let shm = self.inner.get();
-        shm.game_structure_control_seq.load(Ordering::Relaxed)
-    }
 }
 
 #[pymodule]
@@ -230,7 +196,6 @@ fn monkey_shared(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("PYRAMID_BASE_RADIUS", pyramid_constants::PYRAMID_BASE_RADIUS)?;
     m.add("PYRAMID_HEIGHT", pyramid_constants::PYRAMID_HEIGHT)?;
     m.add("PYRAMID_START_ANGLE_OFFSET_RAD", pyramid_constants::PYRAMID_START_ANGLE_OFFSET_RAD)?;
-    m.add("DEFAULT_PYRAMID_TYPE", pyramid_constants::DEFAULT_PYRAMID_TYPE as u32)?;
     m.add("PYRAMID_TARGET_DOOR_INDEX", pyramid_constants::PYRAMID_TARGET_DOOR_INDEX)?;
     m.add("PYRAMID_COLORS", pyramid_constants::PYRAMID_COLORS.iter().map(|f| f.to_vec()).collect::<Vec<Vec<f32>>>())?;
     m.add("PYRAMID_DECORATIONS_COUNT", pyramid_constants::PYRAMID_DECORATIONS_COUNT.to_vec())?;

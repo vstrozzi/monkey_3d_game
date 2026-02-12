@@ -132,13 +132,6 @@ pub fn setup_round(
 
     gs_game.win_time.store(0, Ordering::Relaxed);
 
-    let p_type_code = gs_game.pyramid_type.load(Ordering::Relaxed);
-    let p_type = if p_type_code == 0 {
-        PyramidType::Type1
-    } else {
-        PyramidType::Type2
-    };
-
     let radius = f32::from_bits(gs_game.base_radius.load(Ordering::Relaxed));
     let height = f32::from_bits(gs_game.height.load(Ordering::Relaxed));
     let orient = f32::from_bits(gs_game.start_orient.load(Ordering::Relaxed));
@@ -171,7 +164,6 @@ pub fn setup_round(
         &mut meshes,
         &mut materials,
         &mut random_gen,
-        p_type,
         radius,
         height,
         orient,

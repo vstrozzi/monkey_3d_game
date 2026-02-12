@@ -7,18 +7,6 @@ use shared::constants::game_constants::SEED;
 use rand_chacha::ChaCha8Rng;
 use std::time::Duration;
 
-/// Different types of pyramids
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PyramidType {
-    Type1,
-    Type2,
-}
-
-impl Default for PyramidType {
-    fn default() -> Self {
-        PyramidType::Type1
-    }
-}
 
 /// Shapes for decorations on the pyramid faces
 #[derive(Clone, Copy, Debug, PartialEq)]

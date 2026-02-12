@@ -81,7 +81,6 @@ pub struct SharedGameStructure {
 
     // Fixed trials fields
     pub seed: AtomicU64,
-    pub pyramid_type: AtomicU32,
     pub base_radius: AtomicU32,
     pub height: AtomicU32,
     pub start_orient: AtomicU32,
@@ -127,7 +126,6 @@ impl SharedGameStructure {
                 SEED,
                 COSINE_ALIGNMENT_TO_WIN},
             pyramid_constants::{
-                DEFAULT_PYRAMID_TYPE,
                 PYRAMID_BASE_RADIUS,
                 PYRAMID_HEIGHT,
                 PYRAMID_START_ANGLE_OFFSET_RAD,
@@ -155,7 +153,6 @@ impl SharedGameStructure {
         Self {
             // Fixed trials vars
             seed: AtomicU64::new(SEED),
-            pyramid_type: AtomicU32::new(DEFAULT_PYRAMID_TYPE as u32),
             base_radius: AtomicU32::new(PYRAMID_BASE_RADIUS.to_bits()),
             height: AtomicU32::new(PYRAMID_HEIGHT.to_bits()),
             start_orient: AtomicU32::new(PYRAMID_START_ANGLE_OFFSET_RAD.to_bits()),
@@ -205,7 +202,6 @@ impl SharedGameStructure {
 
     pub fn reset_all_fields(&self, other: &SharedGameStructure) {
         self.seed.store(other.seed.load(Ordering::Relaxed), Ordering::Relaxed);
-        self.pyramid_type.store(other.pyramid_type.load(Ordering::Relaxed), Ordering::Relaxed);
         self.base_radius.store(other.base_radius.load(Ordering::Relaxed), Ordering::Relaxed);
         self.height.store(other.height.load(Ordering::Relaxed), Ordering::Relaxed);
         self.start_orient.store(other.start_orient.load(Ordering::Relaxed), Ordering::Relaxed);
@@ -253,10 +249,6 @@ pub struct SharedMemory {
     pub commands: SharedCommands,
     pub game_structure_game: SharedGameStructure,
     pub game_structure_control: SharedGameStructure,
-
-    pub commands_seq: AtomicU32, // Sequence number for commands
-    pub game_structure_game_seq: AtomicU32, // Sequence number for game structure from game
-    pub game_structure_control_seq: AtomicU32, // Sequence number for game structure from controller
 }
 
 impl SharedMemory {
@@ -265,9 +257,6 @@ impl SharedMemory {
             commands: SharedCommands::new(),
             game_structure_game: SharedGameStructure::new(),
             game_structure_control: SharedGameStructure::new(),
-            commands_seq: AtomicU32::new(0),
-            game_structure_game_seq: AtomicU32::new(0),
-            game_structure_control_seq: AtomicU32::new(0),
         }
     }
 }

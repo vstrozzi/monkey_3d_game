@@ -2,7 +2,7 @@
 
 use crate::utils::objects::{
     BaseDoor, BaseFrame, Decoration, DecorationSet, DecorationShape, GameEntity, HoleEmissive,
-    HoleLight, Pyramid, PyramidType, RandomGen, RotableComponent,
+    HoleLight, Pyramid, RandomGen, RotableComponent,
 };
 use bevy::prelude::*;
 use shared::constants::{object_constants::GROUND_Y, pyramid_constants::*};
@@ -361,7 +361,6 @@ pub fn spawn_pyramid(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     random_gen: &mut ResMut<RandomGen>,
-    p_type: PyramidType,
     p_radius: f32,
     p_height: f32,
     p_orientation_rad: f32,
@@ -474,36 +473,32 @@ pub fn spawn_pyramid(
         )));
     }
 
-    // Handle Type2 Logic (Face 3 copies Face 2)
-    if p_type == PyramidType::Type2 {
-        dec_sets.push(dec_sets[2].clone()); // Copy Face 2 Set A
-        dec_sets.push(dec_sets[3].clone()); // Copy Face 2 Set B
-    } else {
-        // Generate fresh sets for Face 3
-        let i = 2;
-        let next = 0;
-        let tl = top_corners[i];
-        let tr = top_corners[next];
-        let bl = base_corners[i];
-        let br = base_corners[next];
+  
+    // Generate fresh sets for Face 3
+    let i = 2;
+    let next = 0;
+    let tl = top_corners[i];
+    let tr = top_corners[next];
+    let bl = base_corners[i];
+    let br = base_corners[next];
 
-        dec_sets.push(Some(generate_decoration_set(
-            &mut random_gen.random_gen,
-            tl,
-            bl,
-            br,
-            decoration_counts[i],
-            decoration_sizes[i],
-        )));
-        dec_sets.push(Some(generate_decoration_set(
-            &mut random_gen.random_gen,
-            tl,
-            br,
-            tr,
-            decoration_counts[i],
-            decoration_sizes[i],
-        )));
-    }
+    dec_sets.push(Some(generate_decoration_set(
+        &mut random_gen.random_gen,
+        tl,
+        bl,
+        br,
+        decoration_counts[i],
+        decoration_sizes[i],
+    )));
+    dec_sets.push(Some(generate_decoration_set(
+        &mut random_gen.random_gen,
+        tl,
+        br,
+        tr,
+        decoration_counts[i],
+        decoration_sizes[i],
+    )));
+    
 
     // Spawn the pyramid faces
     for i in 0..3 {
